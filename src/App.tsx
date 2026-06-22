@@ -12,8 +12,17 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { GeminiService } from './services/geminiService';
-import type { GeminiResponse } from './services/geminiService';
-import { saveUtteranceToFirestore } from './services/firebaseService';
+import type { GeminiResponse, InfoCheckResponse } from './services/geminiService';
+import { 
+  saveUserToFirestore, 
+  startTrainingSessionInFirestore, 
+  endTrainingSessionInFirestore, 
+  saveUtteranceToFirestore 
+} from './services/firebaseService';
+import { familyCases } from './constants/cases';
+import ChangelogModal from './components/ChangelogModal';
+import { CHANGELOG_DATA } from './constants/changelog';
+
 
 interface Message {
   id: string;
@@ -44,14 +53,39 @@ export default function App() {
   const [isServiceConfigured, setIsServiceConfigured] = useState(false);
   const [showKeySetup, setShowKeySetup] = useState(false);
 
+  // Firebase 測試者與場次狀態
+  const [userId] = useState(() => 'user_mvp_' + Math.random().toString(36).substring(2, 9));
+  const [userName] = useState('測試受訓人員');
+  const [sessionId, setSessionId] = useState('');
+
+  // 畫面控制與案例設定狀態
+  const [isChatStarted, setIsChatStarted] = useState(false);
+  const [selectedCaseId, setSelectedCaseId] = useState('case-a');
+  const [selectedTimeMode, setSelectedTimeMode] = useState<number>(30);
+
+  // 輔助功能狀態管理
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [coachSuggestion, setCoachSuggestion] = useState('');
+  const [coachReasoning, setCoachReasoning] = useState('');
+
+  const [showCheckModal, setShowCheckModal] = useState(false);
+  const [isCheckingInfo, setIsCheckingInfo] = useState(false);
+  const [checkResult, setCheckResult] = useState<InfoCheckResponse | null>(null);
+
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+
   // 求救狀態
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
 
   // 統計狀態（用於結算報告）
   const [allSkillTags, setAllSkillTags] = useState<string[]>([]);
 
+  // 更新日誌狀態
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+
   // 服務實例與 DOM 參考
   const geminiServiceRef = useRef<GeminiService>(new GeminiService());
+
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // 滾動至對話最下方
@@ -67,9 +101,7 @@ export default function App() {
   useEffect(() => {
     const isConfigured = geminiServiceRef.current.isConfigured();
     setIsServiceConfigured(isConfigured);
-    if (isConfigured) {
-      handleRestartChat();
-    } else {
+    if (!isConfigured) {
       setShowKeySetup(true);
     }
   }, []);
@@ -92,9 +124,23 @@ export default function App() {
     }
   };
 
-  // 啟動或重新開始對話
+  // 啟動或重新開始對話 (回到設定面板)
   const handleRestartChat = () => {
+    setIsChatStarted(false);
+    setIsEnded(false);
+    setMessages([]);
+    setSessionId('');
+  };
+
+  // 點擊「開始訪談」後的初始化與 Firebase 註冊行為
+  const handleStartInterview = async () => {
+    if (!isServiceConfigured) {
+      setShowKeySetup(true);
+      return;
+    }
+
     try {
+      setIsChatStarted(true);
       setIsTyping(true);
       const initialScore = 50;
       setRapportScore(initialScore);
@@ -104,7 +150,7 @@ export default function App() {
       setAllSkillTags([]);
 
       const service = geminiServiceRef.current;
-      const initialResponse = service.startNewChat(initialScore);
+      const initialResponse = service.startNewChat(initialScore, selectedCaseId, selectedTimeMode);
 
       const initialMessage: Message = {
         id: 'init-npc',
@@ -119,18 +165,39 @@ export default function App() {
 
       setMessages([initialMessage]);
       
-      // 異步寫入 Firestore
+      // 生成本場次隨機 sessionId
+      const newSessionId = 'session_' + Date.now();
+      setSessionId(newSessionId);
+
+      // 1. 寫入/更新使用者基本資訊
+      saveUserToFirestore({
+        userId,
+        name: userName,
+        role: '早療人員'
+      });
+
+      // 2. 建立訓練場次
+      const selectedCase = familyCases.find(c => c.id === selectedCaseId) || familyCases[0];
+      startTrainingSessionInFirestore({
+        sessionId: newSessionId,
+        userId,
+        selectedFamilyCase: selectedCase.name,
+        timeLimitSeconds: selectedTimeMode * 60
+      });
+
+      // 3. 寫入初始對話記錄
       saveUtteranceToFirestore({
+        session_id: newSessionId,
         speaker: 'npc',
         text: initialResponse.npc_reply,
-        skill_tags: initialResponse.student_skill_tag,
-        rapport_score_after: initialScore,
-        emotion_state: initialResponse.npc_emotion_tag
+        rapport_score: initialScore,
+        student_skill_tag: initialResponse.student_skill_tag
       });
 
     } catch (err: any) {
       console.error(err);
       alert(err.message || "啟動對話失敗");
+      setIsChatStarted(false);
     } finally {
       setIsTyping(false);
     }
@@ -199,20 +266,20 @@ export default function App() {
 
       // 6. 異步寫入 Firestore（受訓人員的對話）
       saveUtteranceToFirestore({
-        speaker: 'trainee',
+        session_id: sessionId,
+        speaker: 'student',
         text: traineeText,
-        skill_tags: response.student_skill_tag, // 標記在這句學員發言上
-        rapport_score_after: calculatedScore,
-        emotion_state: response.npc_emotion_tag
+        rapport_score: calculatedScore,
+        student_skill_tag: response.student_skill_tag
       });
 
       // 異步寫入 Firestore（NPC 的回應）
       saveUtteranceToFirestore({
+        session_id: sessionId,
         speaker: 'npc',
         text: response.npc_reply,
-        skill_tags: [],
-        rapport_score_after: calculatedScore,
-        emotion_state: response.npc_emotion_tag
+        rapport_score: calculatedScore,
+        student_skill_tag: []
       });
 
     } catch (err: any) {
@@ -248,19 +315,9 @@ export default function App() {
     setIsLoadingSuggestion(true);
     try {
       const data = await geminiServiceRef.current.getHelpSuggestion(rapportScore);
-
-      // 將教練訊息加入對話框作為指引
-      const coachMsgId = `coach-${Date.now()}`;
-      setMessages(prev => [...prev, {
-        id: coachMsgId,
-        sender: 'coach',
-        text: `【督導建議問法】：「${data.coach_suggestion}」\n\n【技巧分析】：${data.coach_reasoning}`,
-        timestamp: new Date()
-      }]);
-
-      // 自動將建議問法填入輸入框，方便學員使用
-      setInputText(data.coach_suggestion);
-
+      setCoachSuggestion(data.coach_suggestion);
+      setCoachReasoning(data.coach_reasoning);
+      setShowHelpModal(true);
     } catch (err: any) {
       console.error(err);
       alert("取得建議失敗，請稍後再試。");
@@ -269,9 +326,36 @@ export default function App() {
     }
   };
 
-  // 結束訪談 🛑
-  const handleEndInterview = () => {
-    setIsEnded(true);
+  // 盤點資訊 📊
+  const handleCheckInfo = async () => {
+    if (isEnded || isTyping || !isServiceConfigured) return;
+
+    setIsCheckingInfo(true);
+    try {
+      const data = await geminiServiceRef.current.checkIFSPInformation();
+      setCheckResult(data);
+      setShowCheckModal(true);
+    } catch (err: any) {
+      console.error(err);
+      alert("盤點資訊失敗，請稍後再試。");
+    } finally {
+      setIsCheckingInfo(false);
+    }
+  };
+
+  // 結束訪談（按鈕點擊，觸發載入與鎖定對話）🛑
+  const handleEndInterviewClick = () => {
+    setIsEnded(true); // 鎖定對話框，不讓使用者繼續輸入
+    setIsGeneratingReport(true); // 顯示產生報告中...載入畫面
+
+    if (sessionId) {
+      endTrainingSessionInFirestore(sessionId, rapportScore);
+    }
+
+    // 模擬 2 秒的報告分析與結算
+    setTimeout(() => {
+      setIsGeneratingReport(false);
+    }, 2000);
   };
 
   // 判斷技巧標籤是否為「風傷標記」或「加分技巧」
@@ -305,6 +389,12 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4">
+          <button 
+            onClick={() => setIsChangelogOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-300 rounded-lg text-xs transition duration-200 cursor-pointer font-sans font-bold"
+          >
+            🚀 {CHANGELOG_DATA[0].version}
+          </button>
           {!isServiceConfigured && (
             <button 
               onClick={() => setShowKeySetup(true)}
@@ -321,6 +411,7 @@ export default function App() {
             </div>
           )}
         </div>
+
       </header>
 
       {/* API 金鑰設定彈窗 */}
@@ -385,11 +476,148 @@ export default function App() {
 
       {/* 主介面左右分欄 */}
       <main className="flex flex-1 overflow-hidden bg-slate-950/50">
-        
-        {/* 左側：沉浸式對話區 (60%) */}
-        <section className="w-3/5 flex flex-col h-full border-r border-slate-900 relative">
+        {!isChatStarted ? (
+          <div className="flex-1 flex items-center justify-center p-6 bg-slate-950/80 overflow-y-auto">
+            <div className="w-full max-w-2xl glass-panel p-8 rounded-3xl border border-slate-800 shadow-2xl relative overflow-hidden animate-fadeIn">
+              {/* 背景微光裝飾 */}
+              <div className="absolute -top-12 -right-12 w-64 h-64 bg-indigo-600/10 rounded-full blur-3xl"></div>
+              <div className="absolute -bottom-12 -left-12 w-64 h-64 bg-pink-500/5 rounded-full blur-3xl"></div>
+              
+              <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-slate-800/80">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-indigo-500 to-pink-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25">
+                  <Sparkles className="w-5.5 h-5.5" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-extrabold tracking-wide text-white">訪談訓練參數設定</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">請選取您要進行訪談模擬的家庭案例與對話時間長度</p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                
+                {/* 1. 選擇家庭案例 */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">
+                    第一步：選擇家庭案例
+                  </label>
+                  <select 
+                    value={selectedCaseId}
+                    onChange={(e) => setSelectedCaseId(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none transition-all cursor-pointer shadow-inner"
+                  >
+                    {familyCases.map((c) => (
+                      <option key={c.id} value={c.id} className="bg-slate-950 text-slate-200">
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 案例詳情卡片 */}
+                {(() => {
+                  const selectedCase = familyCases.find(c => c.id === selectedCaseId) || familyCases[0];
+                  return (
+                    <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-5 space-y-4 shadow-sm animate-fadeIn">
+                      <div className="flex items-center gap-2 text-indigo-400 text-xs font-bold tracking-wider uppercase">
+                        <span>📋</span> 案例檔案 (Case File)
+                      </div>
+                      
+                      <div className="space-y-3.5">
+                        <div>
+                          <span className="text-[11px] text-slate-500 block mb-1">家庭背景說明</span>
+                          <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/30 p-3 rounded-lg border border-slate-800/40">
+                            {selectedCase.background_prompt}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-pink-400/90 flex items-center gap-1 mb-1 font-medium">
+                            <span>🔑</span> 隱藏痛點提示
+                          </span>
+                          <p className="text-xs text-pink-300/80 leading-relaxed bg-pink-950/10 p-3 rounded-lg border border-pink-950/20">
+                            {selectedCase.hidden_pain_point}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 2. 選擇訪談時間 */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">
+                    第二步：選擇時間模式 (分鐘)
+                  </label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[30, 60, 90].map((mins) => (
+                      <button
+                        key={mins}
+                        type="button"
+                        onClick={() => setSelectedTimeMode(mins)}
+                        className={`py-3 rounded-xl border font-bold text-xs tracking-wider transition-all duration-200 flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                          selectedTimeMode === mins
+                            ? 'bg-gradient-to-tr from-indigo-600/20 to-pink-500/20 border-indigo-500 text-indigo-300 shadow-lg shadow-indigo-500/10'
+                            : 'bg-slate-900/50 border-slate-800 hover:border-slate-700 text-slate-400'
+                        }`}
+                      >
+                        <span className="text-sm font-extrabold">{mins} 分鐘</span>
+                        <span className="text-[9px] opacity-60">限時訪談</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. 開始訪談按鈕 */}
+                <div className="pt-4">
+                  <button
+                    onClick={handleStartInterview}
+                    className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-pink-500 hover:from-indigo-500 hover:to-pink-400 text-white font-bold text-sm tracking-widest shadow-xl shadow-indigo-600/20 hover:shadow-indigo-500/30 transition-all duration-300 transform active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer cursor-glowing font-sans"
+                  >
+                    <span>🚀</span> 開始訪談訓練
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* 左側：沉浸式對話區 (60%) */}
+            <section className="w-3/5 flex flex-col h-full border-r border-slate-900 relative">
+              {/* 輔助功能工具列 */}
+              {!isEnded && isChatStarted && (
+                <div className="flex items-center justify-between px-6 py-3 bg-slate-900/40 border-b border-slate-800/80 shrink-0 gap-3">
+                  <div className="text-xs text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
+                    <span>🔧</span> 訪談輔助工具
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleHelpSeek}
+                      disabled={isLoadingSuggestion || isTyping}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600/10 hover:bg-amber-600/25 disabled:opacity-50 border border-amber-500/20 text-amber-300 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer shadow-sm shadow-amber-950/20"
+                    >
+                      <span>🆘</span> {isLoadingSuggestion ? '分析中...' : '暫停求救'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCheckInfo}
+                      disabled={isCheckingInfo || isTyping}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600/10 hover:bg-indigo-600/25 disabled:opacity-50 border border-indigo-500/20 text-indigo-300 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer shadow-sm shadow-indigo-950/20"
+                    >
+                      <span>📊</span> {isCheckingInfo ? '盤點中...' : '盤點資訊'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleEndInterviewClick}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-600/10 hover:bg-rose-600/25 border border-rose-500/20 text-rose-300 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer shadow-sm shadow-rose-950/20"
+                    >
+                      <span>🛑</span> 結束訪談
+                    </button>
+                  </div>
+                </div>
+              )}
           
-          {/* 對話記錄窗 */}
+              {/* 對話記錄窗 */}
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 custom-scrollbar">
             {messages.map((msg) => {
               if (msg.sender === 'trainee') {
@@ -424,14 +652,16 @@ export default function App() {
                 );
               } else {
                 // NPC Parent
+                const activeCase = familyCases.find(c => c.id === selectedCaseId) || familyCases[0];
+                const activeShortName = activeCase.name.split(' ')[0];
                 return (
                   <div key={msg.id} className="flex justify-start items-start gap-3 animate-slideInLeft">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-pink-500/20 to-orange-500/20 border border-pink-500/30 flex flex-col items-center justify-center shadow-inner shrink-0">
                       <span className="text-base">👩</span>
-                      <span className="text-[8px] text-pink-400 font-bold scale-90">小A媽</span>
+                      <span className="text-[8px] text-pink-400 font-bold scale-90">{activeShortName}</span>
                     </div>
                     <div className="flex flex-col items-start max-w-[70%]">
-                      <span className="text-[10px] text-slate-500 mb-1">小A媽媽 (24歲單親)</span>
+                      <span className="text-[10px] text-slate-500 mb-1">{activeCase.name}</span>
                       <div className="glass-panel text-slate-100 rounded-2xl rounded-tl-none px-4 py-3 shadow-md border border-slate-700/50">
                         <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                       </div>
@@ -461,46 +691,32 @@ export default function App() {
             })}
 
             {/* NPC 打字中動畫 */}
-            {isTyping && (
-              <div className="flex justify-start items-start gap-3 animate-pulse">
-                <div className="w-10 h-10 rounded-xl bg-pink-500/10 border border-pink-500/20 flex flex-col items-center justify-center shrink-0">
-                  <span className="text-base">👩</span>
-                </div>
-                <div className="flex flex-col items-start">
-                  <span className="text-[10px] text-slate-500 mb-1">小A媽媽正在打字...</span>
-                  <div className="glass-panel rounded-2xl rounded-tl-none px-4 py-3 border border-slate-800">
-                    <div className="typing-dots">
-                      <span></span>
-                      <span></span>
-                      <span></span>
+            {isTyping && (() => {
+              const activeCase = familyCases.find(c => c.id === selectedCaseId) || familyCases[0];
+              const activeShortName = activeCase.name.split(' ')[0];
+              return (
+                <div className="flex justify-start items-start gap-3 animate-pulse">
+                  <div className="w-10 h-10 rounded-xl bg-pink-500/10 border border-pink-500/20 flex flex-col items-center justify-center shrink-0">
+                    <span className="text-base">👩</span>
+                  </div>
+                  <div className="flex flex-col items-start">
+                    <span className="text-[10px] text-slate-500 mb-1">{activeShortName}家長正在打字...</span>
+                    <div className="glass-panel rounded-2xl rounded-tl-none px-4 py-3 border border-slate-800">
+                      <div className="typing-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             <div ref={chatEndRef} />
           </div>
 
-          {/* 懸浮快捷鍵區域 */}
-          {!isEnded && isServiceConfigured && (
-            <div className="absolute bottom-24 left-6 flex items-center gap-3 z-10">
-              <button 
-                onClick={handleHelpSeek}
-                disabled={isLoadingSuggestion || isTyping}
-                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 disabled:opacity-50 text-white rounded-full text-xs font-semibold shadow-lg shadow-amber-900/30 border border-amber-500/30 transition duration-200"
-              >
-                <span>🆘</span> {isLoadingSuggestion ? '正在分析脈絡...' : '暫停求救 (AI 建議)'}
-              </button>
-              <button 
-                onClick={handleEndInterview}
-                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white rounded-full text-xs font-semibold shadow-lg shadow-rose-900/30 border border-rose-500/30 transition duration-200"
-              >
-                <XOctagon className="w-3.5 h-3.5" />
-                結束訪談結算
-              </button>
-            </div>
-          )}
+
 
           {/* 底部輸入欄 */}
           <div className="p-4 bg-slate-900/60 border-t border-slate-900 shrink-0">
@@ -665,10 +881,15 @@ export default function App() {
             </div>
 
             {/* 背景提示 */}
-            <div className="bg-slate-950/30 border border-slate-900 rounded-xl p-3 text-[11px] text-slate-500 mt-4 leading-relaxed">
-              <span className="font-semibold text-slate-400 block mb-1">💡 小A媽媽的隱藏設定：</span>
-              24歲單親媽媽，育有三子。有家暴史，對社工的調查極度防衛。請使用同理心、避免評價或連續性封閉式質問。
-            </div>
+            {(() => {
+              const activeCase = familyCases.find(c => c.id === selectedCaseId) || familyCases[0];
+              return (
+                <div className="bg-slate-950/30 border border-slate-900 rounded-xl p-3 text-[11px] text-slate-500 mt-4 leading-relaxed animate-fadeIn">
+                  <span className="font-semibold text-slate-400 block mb-1">💡 {activeCase.name.split(' ')[0]} 的引導提示：</span>
+                  請使用同理心、避免評價或連續性封閉式質問，並嘗試理解家庭的隱藏痛點。
+                </div>
+              );
+            })()}
           </div>
 
           {/* 結算報告區 (在訪談結束後渲染) */}
@@ -741,9 +962,195 @@ export default function App() {
           )}
 
         </section>
+      </>
+    )}
+  </main>
+      {/* 暫停求救 Modal */}
+      {showHelpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="w-full max-w-lg glass-panel p-6 rounded-3xl shadow-2xl border border-slate-700 relative overflow-hidden animate-scaleUp">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl"></div>
+            
+            <div className="flex items-center gap-3 mb-5 pb-3 border-b border-slate-800">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400 font-bold">
+                🆘
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-slate-100 font-sans">AI 督導指導建議</h3>
+                <p className="text-[10px] text-slate-400 font-sans">根據當前對話脈絡提供的專業引導技巧</p>
+              </div>
+            </div>
 
-      </main>
+            <div className="space-y-4">
+              <div>
+                <span className="text-[10px] text-amber-400 block font-semibold uppercase tracking-wider mb-1 font-sans">💡 建議問法 (你可以這樣說)：</span>
+                <p className="text-sm font-bold text-white bg-slate-950/80 p-4 rounded-2xl border border-amber-500/20 leading-relaxed shadow-inner font-sans">
+                  「{coachSuggestion}」
+                </p>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-500 block font-semibold uppercase tracking-wider mb-1 font-sans">🧠 技巧與脈絡分析：</span>
+                <p className="text-xs text-slate-300 bg-slate-900/40 p-4 rounded-2xl border border-slate-800 leading-relaxed max-h-48 overflow-y-auto font-sans">
+                  {coachReasoning}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 mt-6 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowHelpModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition cursor-pointer font-sans"
+              >
+                關閉
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setInputText(coachSuggestion);
+                  setShowHelpModal(false);
+                }}
+                className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white text-xs font-extrabold rounded-xl shadow-lg shadow-amber-600/25 transition cursor-pointer font-sans"
+              >
+                直接填入輸入框
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 盤點資訊 Modal */}
+      {showCheckModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="w-full max-w-xl glass-panel p-6 rounded-3xl shadow-2xl border border-slate-700 relative overflow-hidden animate-scaleUp">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl"></div>
+            
+            <div className="flex items-center gap-3 mb-5 pb-3 border-b border-slate-800">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold">
+                📊
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-slate-100 font-sans">IFSP 關鍵資訊盤點</h3>
+                <p className="text-[10px] text-slate-400 font-sans">分析對話是否已揭露個別化家庭服務計畫所需的關鍵指標</p>
+              </div>
+            </div>
+
+            {checkResult ? (
+              <div className="space-y-4">
+                
+                {/* 盤點卡片 - 家庭結構 */}
+                <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 flex gap-3.5 items-start">
+                  <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center font-bold text-xs ${
+                    checkResult.family_structure.achieved 
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                      : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                  }`}>
+                    {checkResult.family_structure.achieved ? '✓' : '✗'}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-slate-200 font-sans">1. 家庭結構 (Family Structure)</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded border font-sans ${
+                        checkResult.family_structure.achieved 
+                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                          : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                      }`}>
+                        {checkResult.family_structure.achieved ? '已達成' : '未完成'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 leading-relaxed font-sans">{checkResult.family_structure.evidence}</p>
+                  </div>
+                </div>
+
+                {/* 盤點卡片 - 經濟狀況 */}
+                <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 flex gap-3.5 items-start">
+                  <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center font-bold text-xs ${
+                    checkResult.financial_status.achieved 
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                      : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                  }`}>
+                    {checkResult.financial_status.achieved ? '✓' : '✗'}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-slate-200 font-sans">2. 經濟狀況 (Financial Status)</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded border font-sans ${
+                        checkResult.financial_status.achieved 
+                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                          : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                      }`}>
+                        {checkResult.financial_status.achieved ? '已達成' : '未完成'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 leading-relaxed font-sans">{checkResult.financial_status.evidence}</p>
+                  </div>
+                </div>
+
+                {/* 盤點卡片 - 發展史 */}
+                <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 flex gap-3.5 items-start">
+                  <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center font-bold text-xs ${
+                    checkResult.developmental_history.achieved 
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                      : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                  }`}>
+                    {checkResult.developmental_history.achieved ? '✓' : '✗'}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-slate-200 font-sans">3. 發展史 (Developmental History)</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded border font-sans ${
+                        checkResult.developmental_history.achieved 
+                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                          : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                      }`}>
+                        {checkResult.developmental_history.achieved ? '已達成' : '未完成'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 leading-relaxed font-sans">{checkResult.developmental_history.evidence}</p>
+                  </div>
+                </div>
+
+              </div>
+            ) : (
+              <div className="text-center text-xs text-slate-500 py-6 font-sans">尚無盤點資料</div>
+            )}
+
+            <div className="flex mt-6 justify-end font-sans">
+              <button
+                type="button"
+                onClick={() => setShowCheckModal(false)}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold rounded-xl shadow-lg shadow-indigo-600/25 transition cursor-pointer"
+              >
+                關閉盤點面板
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 產生報告中 Loading 畫面 */}
+      {isGeneratingReport && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative w-16 h-16 flex items-center justify-center">
+              <div className="absolute inset-0 rounded-full border-4 border-slate-800"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-t-indigo-500 border-r-pink-500 animate-spin"></div>
+              <Sparkles className="w-6 h-6 text-indigo-400 animate-pulse" />
+            </div>
+            
+            <div className="text-center font-sans">
+              <h3 className="font-extrabold text-lg text-slate-100 tracking-wider">產生評估報告中...</h3>
+              <p className="text-xs text-slate-400 mt-1.5 animate-pulse">AI 督導正在彙整訪談對話與評估關鍵技巧...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 系統更新日誌彈窗 */}
+      <ChangelogModal isOpen={isChangelogOpen} onClose={() => setIsChangelogOpen(false)} />
 
     </div>
   );
 }
+
