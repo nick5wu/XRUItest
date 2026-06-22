@@ -1,6 +1,6 @@
-import React from 'react';
 import { X, Calendar } from 'lucide-react';
 import { CHANGELOG_DATA } from '../constants/changelog';
+
 
 interface ChangelogModalProps {
   isOpen: boolean;

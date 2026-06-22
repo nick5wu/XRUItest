@@ -3,7 +3,6 @@ import {
   MessageSquare, 
   Send, 
   LifeBuoy, 
-  XOctagon, 
   RotateCcw, 
   Sparkles, 
   Award, 
