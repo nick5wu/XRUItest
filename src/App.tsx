@@ -82,6 +82,17 @@ export default function App() {
   // 更新日誌狀態
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
 
+  // 倒數計時狀態
+  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [timerActive, setTimerActive] = useState<boolean>(false);
+
+  // 格式化時間 (MM:SS)
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   // 服務實例與 DOM 參考
   const geminiServiceRef = useRef<GeminiService>(new GeminiService());
 
@@ -104,6 +115,24 @@ export default function App() {
       setShowKeySetup(true);
     }
   }, []);
+
+  // 訪談時間倒數計時器 effect
+  useEffect(() => {
+    if (!timerActive || isEnded || !isChatStarted) return;
+
+    if (timeLeft <= 0) {
+      setTimerActive(false);
+      handleEndInterviewClick();
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setTimeLeft(prev => prev - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [timeLeft, timerActive, isEnded, isChatStarted]);
+
 
   // 設定暫存金鑰
   const handleSaveTempKey = () => {
@@ -129,6 +158,8 @@ export default function App() {
     setIsEnded(false);
     setMessages([]);
     setSessionId('');
+    setTimerActive(false);
+    setTimeLeft(0);
   };
 
   // 點擊「開始訪談」後的初始化與 Firebase 註冊行為
@@ -147,6 +178,11 @@ export default function App() {
       setLatestAnalysis(null);
       setIsEnded(false);
       setAllSkillTags([]);
+      
+      // 設定計時器時間並啟動
+      setTimeLeft(selectedTimeMode * 60);
+      setTimerActive(true);
+
 
       const service = geminiServiceRef.current;
       const initialResponse = service.startNewChat(initialScore, selectedCaseId, selectedTimeMode);
@@ -346,6 +382,7 @@ export default function App() {
   const handleEndInterviewClick = () => {
     setIsEnded(true); // 鎖定對話框，不讓使用者繼續輸入
     setIsGeneratingReport(true); // 顯示產生報告中...載入畫面
+    setTimerActive(false); // 停止倒數計時
 
     if (sessionId) {
       endTrainingSessionInFirestore(sessionId, rapportScore);
@@ -585,8 +622,19 @@ export default function App() {
               {/* 輔助功能工具列 */}
               {!isEnded && isChatStarted && (
                 <div className="flex items-center justify-between px-6 py-3 bg-slate-900/40 border-b border-slate-800/80 shrink-0 gap-3">
-                  <div className="text-xs text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
-                    <span>🔧</span> 訪談輔助工具
+                  <div className="flex items-center gap-4">
+                    <div className="text-xs text-slate-400 font-semibold tracking-wider uppercase flex items-center gap-1.5">
+                      <span>🔧</span> 訪談輔助工具
+                    </div>
+                    {/* 倒數計時器 UI */}
+                    <div className={`text-xs font-mono font-extrabold px-2.5 py-1 rounded-lg border flex items-center gap-1.5 tracking-wider transition-all duration-300 ${
+                      timeLeft <= 180 
+                        ? 'bg-rose-500/10 border-rose-500/30 text-rose-400 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.3)]' 
+                        : 'bg-slate-800/40 border-slate-800 text-slate-300'
+                    }`}>
+                      <span className={timeLeft <= 180 ? 'animate-bounce' : ''}>⏱️</span>
+                      剩餘時間 {formatTime(timeLeft)}
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button
