@@ -7,6 +7,17 @@ export interface ChangelogItem {
 
 export const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    version: 'v1.3.0',
+    date: '2026-08-03',
+    title: '新增學生自評與反思模組 & 督導審核後台 (Supervisor Dashboard)',
+    changes: [
+      '新增學生自評與反思模組：支援六大面向自評 Slider、4大開放式問答表單與 Firestore 同步。',
+      '新增督導/教授審核後台：提供高風險預警區（自動紅字高亮關係崩解或觸發痛點場次）。',
+      '實作覆核 Modal：渲染對話逐字稿、SVG 家長 NPC 信任/防衛度心態軌跡圖與督導手動覆核表單。',
+      '支援指定重練 (required_repractice) 標記與督導指導建議寫入。'
+    ]
+  },
+  {
     version: 'v1.2.0',
     date: '2026-08-03',
     title: '新增提問監控、動態心態軌跡與六大面向綜合評估',

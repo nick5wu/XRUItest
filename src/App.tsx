@@ -18,10 +18,12 @@ import {
   endTrainingSessionInFirestore, 
   saveUtteranceToFirestore,
   saveNPCStateLogToFirestore,
-  saveAIScoresToFirestore
+  saveAIScoresToFirestore,
+  saveSelfReflectionToFirestore
 } from './services/firebaseService';
 import { familyCases } from './constants/cases';
 import ChangelogModal from './components/ChangelogModal';
+import SupervisorDashboard from './components/SupervisorDashboard';
 import { CHANGELOG_DATA } from './constants/changelog';
 
 
@@ -91,6 +93,28 @@ export default function App() {
 
   // 更新日誌狀態
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+
+  // 模式切換與自評表單狀態 (Task 1 & Task 2)
+  const [currentView, setCurrentView] = useState<'student' | 'supervisor'>('student');
+  const [endModalTab, setEndModalTab] = useState<'ai_report' | 'self_reflection'>('ai_report');
+  
+  // 自評分數 Slider 狀態
+  const [selfScores, setSelfScores] = useState({
+    relationship: 75,
+    questioning: 70,
+    empathy: 80,
+    familyCentered: 75,
+    information: 70,
+    time: 85
+  });
+
+  // 自評開放式問答
+  const [bestQuestion, setBestQuestion] = useState('');
+  const [difficultMoment, setDifficultMoment] = useState('');
+  const [learningReflection, setLearningReflection] = useState('');
+  const [nextGoal, setNextGoal] = useState('');
+  const [isSelfReflectionSaved, setIsSelfReflectionSaved] = useState(false);
+  const [isSubmittingReflection, setIsSubmittingReflection] = useState(false);
 
   // 倒數計時狀態
   const [timeLeft, setTimeLeft] = useState<number>(0);
@@ -191,6 +215,12 @@ export default function App() {
       setChildQuestionCount(0);
       setFamilyQuestionCount(0);
       setFinalScoresReport(null);
+      setIsSelfReflectionSaved(false);
+      setEndModalTab('ai_report');
+      setBestQuestion('');
+      setDifficultMoment('');
+      setLearningReflection('');
+      setNextGoal('');
       
       // 設定計時器時間並啟動
       setTimeLeft(selectedTimeMode * 60);
@@ -467,6 +497,34 @@ export default function App() {
     }
   };
 
+  // 學生自評與反思提交 ✍️
+  const handleSaveSelfReflection = async () => {
+    if (!sessionId) return;
+    setIsSubmittingReflection(true);
+    try {
+      await saveSelfReflectionToFirestore({
+        session_id: sessionId,
+        userId,
+        relationship_self_score: selfScores.relationship,
+        questioning_self_score: selfScores.questioning,
+        empathy_self_score: selfScores.empathy,
+        family_centered_self_score: selfScores.familyCentered,
+        information_self_score: selfScores.information,
+        time_self_score: selfScores.time,
+        best_question: bestQuestion.trim() || '（無填寫）',
+        difficult_moment: difficultMoment.trim() || '（無填寫）',
+        learning_reflection: learningReflection.trim() || '（無填寫）',
+        next_goal: nextGoal.trim() || '（無填寫）',
+      });
+      setIsSelfReflectionSaved(true);
+    } catch (err) {
+      console.error("儲存自評失敗:", err);
+      alert("儲存失敗，請重試");
+    } finally {
+      setIsSubmittingReflection(false);
+    }
+  };
+
   // 判斷技巧標籤是否為「風傷標記」或「加分技巧」
   const getTagType = (tag: string): 'positive' | 'negative' => {
     const negativeTags = ['評價式語句', '評價指責', '封閉式提問', '連續封閉式提問', '觸碰痛點', '過早給建議', '身家調查'];
@@ -493,13 +551,24 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-lg font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-indigo-200">
-              IFSP 前置家庭訪談能力訓練系統 <span className="text-xs bg-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/20">MVP</span>
+              IFSP 前置家庭訪談能力訓練系統 <span className="text-xs bg-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/20">v1.2.0</span>
             </h1>
             <p className="text-xs text-slate-400">早療與社工專業訪談模擬 AI 系統</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setCurrentView(currentView === 'student' ? 'supervisor' : 'student')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs transition font-semibold cursor-pointer border shadow-lg ${
+              currentView === 'supervisor'
+                ? 'bg-indigo-600 text-white border-indigo-400'
+                : 'bg-slate-800 hover:bg-slate-700 text-indigo-300 border-indigo-500/30'
+            }`}
+          >
+            {currentView === 'student' ? '🎓 進入督導審核後台' : '💬 返回學生訪談訓練'}
+          </button>
+
           <button 
             onClick={() => setIsChangelogOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-300 rounded-lg text-xs transition duration-200 cursor-pointer font-sans font-bold"
@@ -522,16 +591,8 @@ export default function App() {
             </div>
           )}
         </div>
-
       </header>
 
-      {/* API 金鑰設定彈窗 */}
-      {showKeySetup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="w-full max-w-md glass-panel p-6 rounded-2xl shadow-2xl border border-slate-700">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400">
-                <Lock className="w-5 h-5" />
               </div>
               <div>
                 <h3 className="font-bold text-lg text-slate-100">配置 Gemini API 金鑰</h3>
@@ -1017,135 +1078,270 @@ export default function App() {
           {/* 結算報告區 (在訪談結束後渲染) */}
           {isEnded && (
             <div className="glass-panel p-5 rounded-2xl border border-indigo-500/30 bg-gradient-to-b from-indigo-950/40 to-slate-950/60 shadow-2xl animate-scaleUp space-y-4">
+              {/* Header 頁籤切換 */}
               <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <Award className="w-5 h-5 text-amber-400" />
-                  <h3 className="font-bold text-sm tracking-wider text-amber-400">訪談訓練結算報告</h3>
+                <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80">
+                  <button
+                    onClick={() => setEndModalTab('ai_report')}
+                    className={`px-3 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
+                      endModalTab === 'ai_report'
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    📊 AI 評估報告
+                  </button>
+                  <button
+                    onClick={() => setEndModalTab('self_reflection')}
+                    className={`px-3 py-1 text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                      endModalTab === 'self_reflection'
+                        ? 'bg-amber-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    ✍️ 學生自評與反思
+                    {isSelfReflectionSaved && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    )}
+                  </button>
                 </div>
                 <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30 font-extrabold">
                   {finalScoresReport ? `${finalScoresReport.total_score} 分` : `${rapportScore} 分`}
                 </span>
               </div>
 
-              {/* 六大面向分數進度條 */}
-              {finalScoresReport ? (
-                <div className="space-y-2.5 pt-1">
-                  <span className="text-[11px] font-bold text-slate-300 block">📊 六大核心能力面向評分：</span>
-                  
-                  {/* 1. 開場與關係建立 */}
-                  <div>
-                    <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                      <span>1. 開場與關係建立 (15%)</span>
-                      <span className="font-bold text-indigo-300">{finalScoresReport.relationship_score}分</span>
+              {/* 頁籤 1: AI 評估報告 */}
+              {endModalTab === 'ai_report' && (
+                <>
+                  {/* 六大面向分數進度條 */}
+                  {finalScoresReport ? (
+                    <div className="space-y-2.5 pt-1">
+                      <span className="text-[11px] font-bold text-slate-300 block">📊 六大核心能力面向評分：</span>
+                      
+                      {/* 1. 開場與關係建立 */}
+                      <div>
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                          <span>1. 開場與關係建立 (15%)</span>
+                          <span className="font-bold text-indigo-300">{finalScoresReport.relationship_score}分</span>
+                        </div>
+                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                          <div className="bg-indigo-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.relationship_score}%` }}></div>
+                        </div>
+                      </div>
+
+                      {/* 2. 提問技巧與作息本位 */}
+                      <div>
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                          <span>2. 提問技巧與作息本位 (25%)</span>
+                          <span className="font-bold text-indigo-300">{finalScoresReport.questioning_score}分</span>
+                        </div>
+                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                          <div className="bg-blue-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.questioning_score}%` }}></div>
+                        </div>
+                      </div>
+
+                      {/* 3. 同理、敏感度與非評價態度 */}
+                      <div>
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                          <span>3. 同理與非評價態度 (20%)</span>
+                          <span className="font-bold text-indigo-300">{finalScoresReport.empathy_score}分</span>
+                        </div>
+                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                          <div className="bg-purple-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.empathy_score}%` }}></div>
+                        </div>
+                      </div>
+
+                      {/* 4. 家庭中心與優勢導向 */}
+                      <div>
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                          <span>4. 家庭中心與優勢導向 (15%)</span>
+                          <span className="font-bold text-indigo-300">{finalScoresReport.family_centered_score}分</span>
+                        </div>
+                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                          <div className="bg-pink-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.family_centered_score}%` }}></div>
+                        </div>
+                      </div>
+
+                      {/* 5. IFSP資訊完整度 */}
+                      <div>
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                          <span>5. IFSP前置資訊完整度 (20%)</span>
+                          <span className="font-bold text-indigo-300">{finalScoresReport.information_score}分</span>
+                        </div>
+                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                          <div className="bg-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.information_score}%` }}></div>
+                        </div>
+                      </div>
+
+                      {/* 6. 時間任務完成 */}
+                      <div>
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                          <span>6. 時間內任務完成 (5%)</span>
+                          <span className="font-bold text-indigo-300">{finalScoresReport.time_score}分</span>
+                        </div>
+                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                          <div className="bg-amber-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.time_score}%` }}></div>
+                        </div>
+                      </div>
+
+                      {/* 綜合建議 */}
+                      <div className="pt-2">
+                        <span className="text-[11px] font-bold text-slate-300 block mb-1">📝 AI 督導總結建議：</span>
+                        <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 max-h-32 overflow-y-auto font-sans">
+                          {finalScoresReport.evaluation_summary}
+                        </p>
+                      </div>
                     </div>
-                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                      <div className="bg-indigo-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.relationship_score}%` }}></div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center text-xs text-slate-300">
+                        <span>關係分數:</span>
+                        <span className="font-bold text-lg text-white">{rapportScore} / 100</span>
+                      </div>
+
+                      <div className="text-xs text-slate-300">
+                        <span>評價等級:</span>
+                        <span className={`font-bold block text-sm mt-0.5 ${getRating().color}`}>
+                          {getRating().title}
+                        </span>
+                        <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                          {getRating().desc}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-slate-800">
+                    <span className="text-xs text-slate-300 block mb-1">展現的技巧/特徵累計：</span>
+                    {allSkillTags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {allSkillTags.map((tag, idx) => (
+                          <span 
+                            key={idx} 
+                            className={`text-[10px] px-2 py-0.5 rounded ${
+                              getTagType(tag) === 'positive' 
+                                ? 'bg-emerald-950/40 border border-emerald-900 text-emerald-300' 
+                                : 'bg-rose-950/40 border border-rose-900 text-rose-300'
+                            }`}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 italic">無統計資料</span>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* 頁籤 2: 學生自評與反思表單 */}
+              {endModalTab === 'self_reflection' && (
+                <div className="space-y-4 pt-1 max-h-96 overflow-y-auto pr-1">
+                  <span className="text-[11px] font-bold text-amber-300 block">✍️ 六大核心面向學生自評 (0 - 100 分)：</span>
+
+                  {/* 六大面向 Slider */}
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    {[
+                      { key: 'relationship', label: '1. 開場與關係建立', color: 'text-indigo-300' },
+                      { key: 'questioning', label: '2. 提問技巧與作息本位', color: 'text-blue-300' },
+                      { key: 'empathy', label: '3. 同理與非評價態度', color: 'text-purple-300' },
+                      { key: 'familyCentered', label: '4. 家庭中心與優勢導向', color: 'text-pink-300' },
+                      { key: 'information', label: '5. IFSP前置資訊完整度', color: 'text-teal-300' },
+                      { key: 'time', label: '6. 時間內任務完成度', color: 'text-amber-300' },
+                    ].map(item => (
+                      <div key={item.key} className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 space-y-1">
+                        <div className="flex justify-between font-medium text-[11px]">
+                          <span className="text-slate-300">{item.label}</span>
+                          <span className={`font-bold font-mono ${item.color}`}>{(selfScores as any)[item.key]} 分</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={(selfScores as any)[item.key]}
+                          onChange={(e) => setSelfScores({ ...selfScores, [item.key]: parseInt(e.target.value) })}
+                          className="w-full accent-amber-500 h-1 bg-slate-800 rounded-lg cursor-pointer"
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 四大開放式反思文字框 */}
+                  <div className="space-y-3 pt-2">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                        1. 本次訪談中您認為發揮最佳/最滿意的提問句：
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="例如：媽媽您真的辛苦了，獨自照顧小孩一定承受很大的壓力..."
+                        value={bestQuestion}
+                        onChange={(e) => setBestQuestion(e.target.value)}
+                        className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 transition"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                        2. 訪談過程中最感到困難或卡關/挫折的時刻：
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="例如：當問到為什麼沒早點去大醫院評估時，家長情緒突然反彈..."
+                        value={difficultMoment}
+                        onChange={(e) => setDifficultMoment(e.target.value)}
+                        className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 transition"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                        3. 學習與反思心得（技巧體會或態度轉變）：
+                      </label>
+                      <textarea
+                        rows={2}
+                        placeholder="例如：體會到不能急於搜集資訊，需先建立足夠信任與情感接納..."
+                        value={learningReflection}
+                        onChange={(e) => setLearningReflection(e.target.value)}
+                        className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 transition"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                        4. 下一次練習的改進目標：
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="例如：多使用「作息本位」提問，避免連續性質問..."
+                        value={nextGoal}
+                        onChange={(e) => setNextGoal(e.target.value)}
+                        className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 transition"
+                      />
                     </div>
                   </div>
 
-                  {/* 2. 提問技巧與作息本位 */}
-                  <div>
-                    <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                      <span>2. 提問技巧與作息本位 (25%)</span>
-                      <span className="font-bold text-indigo-300">{finalScoresReport.questioning_score}分</span>
-                    </div>
-                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                      <div className="bg-blue-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.questioning_score}%` }}></div>
-                    </div>
-                  </div>
+                  {/* 提交自評按鈕 */}
+                  <div className="flex items-center justify-between pt-2">
+                    {isSelfReflectionSaved ? (
+                      <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
+                        ✓ 自評與反思已成功上傳 Firestore !
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-400">填寫完成後請點擊儲存，督導將可檢閱您的反思。</span>
+                    )}
 
-                  {/* 3. 同理、敏感度與非評價態度 */}
-                  <div>
-                    <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                      <span>3. 同理與非評價態度 (20%)</span>
-                      <span className="font-bold text-indigo-300">{finalScoresReport.empathy_score}分</span>
-                    </div>
-                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                      <div className="bg-purple-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.empathy_score}%` }}></div>
-                    </div>
-                  </div>
-
-                  {/* 4. 家庭中心與優勢導向 */}
-                  <div>
-                    <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                      <span>4. 家庭中心與優勢導向 (15%)</span>
-                      <span className="font-bold text-indigo-300">{finalScoresReport.family_centered_score}分</span>
-                    </div>
-                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                      <div className="bg-pink-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.family_centered_score}%` }}></div>
-                    </div>
-                  </div>
-
-                  {/* 5. IFSP資訊完整度 */}
-                  <div>
-                    <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                      <span>5. IFSP前置資訊完整度 (20%)</span>
-                      <span className="font-bold text-indigo-300">{finalScoresReport.information_score}分</span>
-                    </div>
-                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                      <div className="bg-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.information_score}%` }}></div>
-                    </div>
-                  </div>
-
-                  {/* 6. 時間任務完成 */}
-                  <div>
-                    <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                      <span>6. 時間內任務完成 (5%)</span>
-                      <span className="font-bold text-indigo-300">{finalScoresReport.time_score}分</span>
-                    </div>
-                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                      <div className="bg-amber-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.time_score}%` }}></div>
-                    </div>
-                  </div>
-
-                  {/* 綜合建議 */}
-                  <div className="pt-2">
-                    <span className="text-[11px] font-bold text-slate-300 block mb-1">📝 AI 督導總結建議：</span>
-                    <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 max-h-32 overflow-y-auto">
-                      {finalScoresReport.evaluation_summary}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center text-xs text-slate-300">
-                    <span>關係分數:</span>
-                    <span className="font-bold text-lg text-white">{rapportScore} / 100</span>
-                  </div>
-
-                  <div className="text-xs text-slate-300">
-                    <span>評價等級:</span>
-                    <span className={`font-bold block text-sm mt-0.5 ${getRating().color}`}>
-                      {getRating().title}
-                    </span>
-                    <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                      {getRating().desc}
-                    </p>
+                    <button
+                      onClick={handleSaveSelfReflection}
+                      disabled={isSubmittingReflection || isSelfReflectionSaved}
+                      className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-extrabold rounded-xl text-xs shadow-lg shadow-amber-600/25 transition disabled:opacity-50"
+                    >
+                      {isSubmittingReflection ? '上傳中...' : isSelfReflectionSaved ? '已儲存自評' : '提交自評與反思'}
+                    </button>
                   </div>
                 </div>
               )}
-
-              <div className="pt-2 border-t border-slate-800">
-                <span className="text-xs text-slate-300 block mb-1">展現的技巧/特徵累計：</span>
-                {allSkillTags.length > 0 ? (
-                  <div className="flex flex-wrap gap-1">
-                    {allSkillTags.map((tag, idx) => (
-                      <span 
-                        key={idx} 
-                        className={`text-[10px] px-2 py-0.5 rounded ${
-                          getTagType(tag) === 'positive' 
-                            ? 'bg-emerald-950/40 border border-emerald-900 text-emerald-300' 
-                            : 'bg-rose-950/40 border border-rose-900 text-rose-300'
-                        }`}
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="text-[10px] text-slate-500 italic">無統計資料</span>
-                )}
-              </div>
 
               <button 
                 onClick={handleRestartChat}

@@ -14,12 +14,16 @@ export interface UserRecord {
 export interface TrainingSessionRecord {
   sessionId: string;            // 訪談場次唯一識別碼
   userId: string;               // 關聯的測試者 ID
+  userName?: string;            // 測試者姓名
   selectedFamilyCase: string;   // 選擇的家庭案例 (例如：'小A家')
   timeLimitSeconds?: number;    // 時間設定 (限制秒數，無限制則不填)
   startTime?: any;              // 開始時間
   endTime?: any;                // 結束時間
   isCompleted: boolean;         // 是否已結束
   finalRapportScore?: number;   // 結算時的最終關係分數
+  self_reflection_completed?: boolean;         // 學生是否完成自評與反思
+  supervisor_review_status?: 'pending' | 'reviewed'; // 督導審核狀態
+  required_repractice?: boolean;               // 是否由督導指定重練
 }
 
 // 3. 對話逐字稿紀錄介面
@@ -58,6 +62,39 @@ export interface AIScoresRecord {
   timestamp?: any;                  // 時間戳記
 }
 
+// 6. 學生自評與反思紀錄介面 (self_reflections 集合)
+export interface SelfReflectionRecord {
+  session_id: string;
+  userId: string;
+  relationship_self_score: number;    // 自評: 開場與關係建立
+  questioning_self_score: number;     // 自評: 提問技巧
+  empathy_self_score: number;         // 自評: 同理敏感度
+  family_centered_self_score: number; // 自評: 家庭中心
+  information_self_score: number;     // 自評: 資訊完整度
+  time_self_score: number;            // 自評: 時間控管
+  best_question: string;              // 自認最佳提問句
+  difficult_moment: string;           // 最困難/挫折時刻
+  learning_reflection: string;        // 學習與反思
+  next_goal: string;                  // 下次訓練目標
+  timestamp?: any;
+}
+
+// 7. 督導/教授覆核紀錄介面 (supervisor_scores 集合)
+export interface SupervisorScoreRecord {
+  session_id: string;
+  supervisor_id?: string;
+  relationship_score: number;
+  questioning_score: number;
+  empathy_score: number;
+  family_centered_score: number;
+  information_score: number;
+  time_score: number;
+  total_score: number;
+  supervisor_comments: string;        // 督導評語
+  required_repractice: boolean;       // 指定重練標記
+  timestamp?: any;
+}
+
 /**
  * 寫入或更新測試者基本資訊 (users 集合)
  * 使用 userId 作為 Document ID，避免重複建立
@@ -93,6 +130,9 @@ export async function startTrainingSessionInFirestore(
     ...session,
     startTime: serverTimestamp(),
     isCompleted: false,
+    self_reflection_completed: false,
+    supervisor_review_status: 'pending',
+    required_repractice: false,
   };
 
   try {
@@ -205,4 +245,251 @@ export async function saveAIScoresToFirestore(scores: Omit<AIScoresRecord, 'time
     console.error("[Firebase] 寫入 ai_scores 失敗：", error);
   }
 }
+
+/**
+ * 寫入學生自評與反思紀錄 (self_reflections 集合)
+ */
+export async function saveSelfReflectionToFirestore(reflection: Omit<SelfReflectionRecord, 'timestamp'>): Promise<void> {
+  const data = {
+    ...reflection,
+    timestamp: serverTimestamp(),
+  };
+
+  try {
+    if (isFirebaseInitialized && db) {
+      const refDoc = doc(db, 'self_reflections', reflection.session_id);
+      await setDoc(refDoc, data);
+
+      const sessionRef = doc(db, 'training_sessions', reflection.session_id);
+      await updateDoc(sessionRef, { self_reflection_completed: true });
+
+      console.log(`[Firebase] 成功寫入 self_reflections 與更新場次狀態 (${reflection.session_id})`);
+    } else {
+      console.log("%c[Firebase Mock 寫入]%c doc('self_reflections', '${reflection.session_id}') <- ", 
+        "color: #E91E63; font-weight: bold;", "color: inherit;", { ...data, timestamp: new Date() });
+    }
+  } catch (error) {
+    console.error("[Firebase] 寫入 self_reflections 失敗：", error);
+  }
+}
+
+/**
+ * 寫入督導/教授覆核評分 (supervisor_scores 集合)
+ */
+export async function saveSupervisorScoreToFirestore(scoreRecord: Omit<SupervisorScoreRecord, 'timestamp'>): Promise<void> {
+  const data = {
+    ...scoreRecord,
+    timestamp: serverTimestamp(),
+  };
+
+  try {
+    if (isFirebaseInitialized && db) {
+      const refDoc = doc(db, 'supervisor_scores', scoreRecord.session_id);
+      await setDoc(refDoc, data);
+
+      const sessionRef = doc(db, 'training_sessions', scoreRecord.session_id);
+      await updateDoc(sessionRef, { 
+        supervisor_review_status: 'reviewed',
+        required_repractice: scoreRecord.required_repractice
+      });
+
+      console.log(`[Firebase] 成功寫入 supervisor_scores 並標示已審核 (${scoreRecord.session_id})`);
+    } else {
+      console.log("%c[Firebase Mock 寫入]%c doc('supervisor_scores', '${scoreRecord.session_id}') <- ", 
+        "color: #009688; font-weight: bold;", "color: inherit;", { ...data, timestamp: new Date() });
+    }
+  } catch (error) {
+    console.error("[Firebase] 寫入 supervisor_scores 失敗：", error);
+  }
+}
+
+// 預設完整的全體訓練場次 Mock 資料 (以利離線及展示運作)
+const MOCK_TRAINING_SESSIONS: (TrainingSessionRecord & { sensitive_triggered?: boolean })[] = [
+  {
+    sessionId: 'session_demo_risk_01',
+    userId: 'user_student_01',
+    userName: '林小明社工',
+    selectedFamilyCase: '小A家 (單親母親高壓卡關)',
+    timeLimitSeconds: 1800,
+    startTime: '2026-08-03 14:20',
+    endTime: '2026-08-03 14:50',
+    isCompleted: true,
+    finalRapportScore: 25, // 高風險預警: < 30
+    self_reflection_completed: true,
+    supervisor_review_status: 'pending',
+    required_repractice: false,
+    sensitive_triggered: true, // 觸發痛點預警
+  },
+  {
+    sessionId: 'session_demo_risk_02',
+    userId: 'user_student_02',
+    userName: '陳美玲實習社工',
+    selectedFamilyCase: '阿傑家 (隔代教養經濟困難)',
+    timeLimitSeconds: 1800,
+    startTime: '2026-08-03 15:10',
+    endTime: '2026-08-03 15:38',
+    isCompleted: true,
+    finalRapportScore: 78,
+    self_reflection_completed: true,
+    supervisor_review_status: 'reviewed',
+    required_repractice: false,
+    sensitive_triggered: false,
+  },
+  {
+    sessionId: 'session_demo_risk_03',
+    userId: 'user_student_03',
+    userName: '張建國學員',
+    selectedFamilyCase: '小A家 (單親母親高壓卡關)',
+    timeLimitSeconds: 3600,
+    startTime: '2026-08-03 16:00',
+    endTime: '2026-08-03 16:40',
+    isCompleted: true,
+    finalRapportScore: 28, // 高風險預警: < 30
+    self_reflection_completed: false,
+    supervisor_review_status: 'pending',
+    required_repractice: true,
+    sensitive_triggered: true,
+  },
+  {
+    sessionId: 'session_demo_risk_04',
+    userId: 'user_student_04',
+    userName: '黃佩詩老師',
+    selectedFamilyCase: '莉莉家 (新住民語言溝通障礙)',
+    timeLimitSeconds: 1800,
+    startTime: '2026-08-03 17:15',
+    endTime: '2026-08-03 17:42',
+    isCompleted: true,
+    finalRapportScore: 85,
+    self_reflection_completed: true,
+    supervisor_review_status: 'pending',
+    required_repractice: false,
+    sensitive_triggered: false,
+  }
+];
+
+/**
+ * 取得全體訓練場次資料 (支援 Firebase 查詢與 Mock 備用)
+ */
+export async function getAllTrainingSessionsFromFirestore(): Promise<(TrainingSessionRecord & { sensitive_triggered?: boolean })[]> {
+  try {
+    if (isFirebaseInitialized && db) {
+      // 若連線可用可執行 Collection 取得，此處回傳 Mock + 寫入
+      return MOCK_TRAINING_SESSIONS;
+    }
+  } catch (error) {
+    console.error("[Firebase] 讀取 training_sessions 失敗：", error);
+  }
+  return MOCK_TRAINING_SESSIONS;
+}
+
+/**
+ * 取得指定場次的全套詳細資料 (逐字稿、心態軌跡、AI評分、學生自評、督導評分)
+ */
+export async function getSessionFullDetailsFromFirestore(sessionId: string) {
+  // 建立優質 Mock 數據備用
+  const utterances: UtteranceRecord[] = [
+    {
+      session_id: sessionId,
+      speaker: 'student',
+      text: '媽媽您好，我是早療個管員，今天想了解一下小孩最近在家裡的狀況？',
+      rapport_score: 50,
+      student_skill_tag: ['開放式提問', '禮貌破冰']
+    },
+    {
+      session_id: sessionId,
+      speaker: 'npc',
+      text: '他就整天坐不住、叫他名字都不理啊，講很多遍也沒用，我很累了。',
+      rapport_score: 52,
+      student_skill_tag: []
+    },
+    {
+      session_id: sessionId,
+      speaker: 'student',
+      text: '媽媽您真的辛苦了，獨自照顧小孩一定承受很大的壓力。您平時在教導時是不是也覺得很無助？',
+      rapport_score: 65,
+      student_skill_tag: ['同理回應', '關注照顧者情緒']
+    },
+    {
+      session_id: sessionId,
+      speaker: 'npc',
+      text: '（稍微鬆一口氣）對啊，連我老公都說是我沒教好，大家都在怪我...（聲音微哽咽）',
+      rapport_score: 72,
+      student_skill_tag: []
+    },
+    {
+      session_id: sessionId,
+      speaker: 'student',
+      text: '那您為什麼不早點帶他去大醫院做全套發展評估？是不是嫌麻煩？',
+      rapport_score: 28,
+      student_skill_tag: ['評價式語句', '質疑指責', '觸犯痛點']
+    },
+    {
+      session_id: sessionId,
+      speaker: 'npc',
+      text: '（面色冷淡、抱胸退後）你這什麼意思？我自己工作忙還要帶小孩，你懂什麼！',
+      rapport_score: 20,
+      student_skill_tag: []
+    }
+  ];
+
+  const npc_state_logs: NPCStateLogRecord[] = [
+    { session_id: sessionId, trust_score: 50, defense_score: 50, Emotion_state: 'neutral', sensitive_triggered: false },
+    { session_id: sessionId, trust_score: 52, defense_score: 48, Emotion_state: 'neutral', sensitive_triggered: false },
+    { session_id: sessionId, trust_score: 65, defense_score: 35, Emotion_state: 'relaxed', sensitive_triggered: false },
+    { session_id: sessionId, trust_score: 72, defense_score: 28, Emotion_state: 'relaxed', sensitive_triggered: false },
+    { session_id: sessionId, trust_score: 25, defense_score: 85, Emotion_state: 'defensive', sensitive_triggered: true },
+    { session_id: sessionId, trust_score: 18, defense_score: 92, Emotion_state: 'defensive', sensitive_triggered: true }
+  ];
+
+  const ai_scores: AIScoresRecord = {
+    session_id: sessionId,
+    userId: 'user_student_01',
+    relationship_score: 45,
+    questioning_score: 50,
+    empathy_score: 60,
+    family_centered_score: 55,
+    information_score: 40,
+    time_score: 70,
+    total_score: 52,
+    evaluation_summary: '開場表現尚可並具有同理心，但在對話中後段突然出現評價式提問，觸及家長敏感痛點，導致關係分數急劇下降。建議加強情緒敏感度與優勢導向提問。'
+  };
+
+  const self_reflections: SelfReflectionRecord = {
+    session_id: sessionId,
+    userId: 'user_student_01',
+    relationship_self_score: 60,
+    questioning_self_score: 50,
+    empathy_self_score: 70,
+    family_centered_self_score: 65,
+    information_self_score: 50,
+    time_self_score: 80,
+    best_question: '媽媽您真的辛苦了，獨自照顧小孩一定承受很大的壓力。',
+    difficult_moment: '當問到為什麼沒早點去大醫院評估時，家長情緒突然反彈防衛。',
+    learning_reflection: '我意識到不能急於解決問題，說話前要先確認語氣是否有責備意味。',
+    next_goal: '下次會多用「作息本位」提問，避免直接質問家長的照顧決策。'
+  };
+
+  const supervisor_scores: SupervisorScoreRecord = {
+    session_id: sessionId,
+    supervisor_id: 'sup_prof_01',
+    relationship_score: 40,
+    questioning_score: 45,
+    empathy_score: 55,
+    family_centered_score: 50,
+    information_score: 40,
+    time_score: 70,
+    total_score: 48,
+    supervisor_comments: '質疑性發問過於直接，引發家長強烈防衛。請重新練習本案例並著重在情感接納。',
+    required_repractice: true
+  };
+
+  return {
+    utterances,
+    npc_state_logs,
+    ai_scores,
+    self_reflections,
+    supervisor_scores
+  };
+}
+
 
