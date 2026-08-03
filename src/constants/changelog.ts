@@ -7,6 +7,17 @@ export interface ChangelogItem {
 
 export const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    version: 'v1.2.0',
+    date: '2026-08-03',
+    title: '新增提問監控、動態心態軌跡與六大面向綜合評估',
+    changes: [
+      '新增關係分數硬性字數限制與動態防衛機制。',
+      '新增 npc_state_logs 對話狀態與防衛/信任度軌跡追蹤。',
+      '新增 Focus Tracker 提問焦點監控（兒童/家庭/其他）。',
+      '新增六大面向綜合結算報告與 Gemini 評估產出。'
+    ]
+  },
+  {
     version: 'v1.1.0',
     date: '2026-06-22',
     title: '新增訪談輔助工具與多案例支援',
