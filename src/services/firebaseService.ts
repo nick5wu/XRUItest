@@ -32,6 +32,32 @@ export interface UtteranceRecord {
   student_skill_tag: string[];    // 學員對話所展現的技巧標籤
 }
 
+// 4. NPC 心理狀態軌跡紀錄介面 (npc_state_logs 集合)
+export interface NPCStateLogRecord {
+  session_id: string;               // 關聯的訪談場次 ID
+  utterance_id?: string;            // 對應發話 ID
+  trust_score: number;              // 信任度 (0-100)
+  defense_score: number;            // 防衛度 (0-100)
+  Emotion_state: 'defensive' | 'relaxed' | 'neutral'; // 當前情緒狀態
+  sensitive_triggered: boolean;     // 是否觸發隱藏痛點
+  timestamp?: any;                  // 時間戳記
+}
+
+// 5. 六大面向 AI 結算評分紀錄介面 (ai_scores 集合)
+export interface AIScoresRecord {
+  session_id: string;               // 關聯的訪談場次 ID
+  userId: string;                   // 測試者 ID
+  relationship_score: number;       // 開場與關係建立 (15%)
+  questioning_score: number;        // 提問技巧與作息本位 (25%)
+  empathy_score: number;            // 同理、敏感度與非評價態度 (20%)
+  family_centered_score: number;    // 家庭中心與優勢導向 (15%)
+  information_score: number;        // IFSP前置資訊完整度 (20%)
+  time_score: number;               // 時間內任務完成 (5%)
+  total_score: number;              // 總分 (100分制)
+  evaluation_summary?: string;      // 評估總結回饋
+  timestamp?: any;                  // 時間戳記
+}
+
 /**
  * 寫入或更新測試者基本資訊 (users 集合)
  * 使用 userId 作為 Document ID，避免重複建立
@@ -133,3 +159,50 @@ export async function saveUtteranceToFirestore(utterance: Omit<UtteranceRecord, 
     console.error("[Firebase] 寫入 utterances 失敗：", error);
   }
 }
+
+/**
+ * 寫入 NPC 心理狀態軌跡紀錄 (npc_state_logs 集合)
+ */
+export async function saveNPCStateLogToFirestore(log: Omit<NPCStateLogRecord, 'timestamp'>): Promise<void> {
+  const logData = {
+    ...log,
+    timestamp: serverTimestamp(),
+  };
+
+  try {
+    if (isFirebaseInitialized && db) {
+      const logsRef = collection(db, 'npc_state_logs');
+      await addDoc(logsRef, logData);
+      console.log(`[Firebase] 成功寫入 npc_state_logs (信任度:${log.trust_score}, 防衛度:${log.defense_score}, 痛點:${log.sensitive_triggered})`);
+    } else {
+      console.log("%c[Firebase Mock 寫入]%c collection('npc_state_logs') <- ", 
+        "color: #FF9800; font-weight: bold;", "color: inherit;", { ...logData, timestamp: new Date() });
+    }
+  } catch (error) {
+    console.error("[Firebase] 寫入 npc_state_logs 失敗：", error);
+  }
+}
+
+/**
+ * 寫入六大面向 AI 結算分數 (ai_scores 集合)
+ */
+export async function saveAIScoresToFirestore(scores: Omit<AIScoresRecord, 'timestamp'>): Promise<void> {
+  const scoresData = {
+    ...scores,
+    timestamp: serverTimestamp(),
+  };
+
+  try {
+    if (isFirebaseInitialized && db) {
+      const scoresRef = doc(db, 'ai_scores', scores.session_id);
+      await setDoc(scoresRef, scoresData);
+      console.log(`[Firebase] 成功寫入 ai_scores (總分:${scores.total_score})`);
+    } else {
+      console.log("%c[Firebase Mock 寫入]%c doc('ai_scores', '${scores.session_id}') <- ", 
+        "color: #9C27B0; font-weight: bold;", "color: inherit;", { ...scoresData, timestamp: new Date() });
+    }
+  } catch (error) {
+    console.error("[Firebase] 寫入 ai_scores 失敗：", error);
+  }
+}
+
