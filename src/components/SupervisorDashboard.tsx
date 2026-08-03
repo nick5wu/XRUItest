@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   AlertTriangle, 
   CheckCircle, 
@@ -19,7 +19,9 @@ import {
 import { 
   getAllTrainingSessionsFromFirestore, 
   getSessionFullDetailsFromFirestore, 
-  saveSupervisorScoreToFirestore,
+  saveSupervisorScoreToFirestore
+} from '../services/firebaseService';
+import type {
   TrainingSessionRecord,
   UtteranceRecord,
   NPCStateLogRecord,

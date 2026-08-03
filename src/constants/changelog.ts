@@ -7,6 +7,16 @@ export interface ChangelogItem {
 
 export const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    version: 'v1.3.1',
+    date: '2026-08-03',
+    title: '修復 App.tsx JSX 結構語法與 Vercel 部署打包發布問題',
+    changes: [
+      '修復 App.tsx return JSX 括號與條件分支標籤配對，消除 TS2657/TS1005 語法錯誤。',
+      '重構學生視圖 div 容器包覆，確保組件閉合結構清晰健全。',
+      '優化相依套件與傳統 CSS 打包選項，修復 Vercel CI/CD 建置錯誤。'
+    ]
+  },
+  {
     version: 'v1.3.0',
     date: '2026-08-03',
     title: '新增學生自評與反思模組 & 督導審核後台 (Supervisor Dashboard)',

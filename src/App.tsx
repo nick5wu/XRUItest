@@ -5,7 +5,6 @@ import {
   LifeBuoy, 
   RotateCcw, 
   Sparkles, 
-  Award, 
   User, 
   Lock, 
   AlertCircle
@@ -551,7 +550,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-lg font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-indigo-200">
-              IFSP 前置家庭訪談能力訓練系統 <span className="text-xs bg-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/20">v1.2.0</span>
+              IFSP 前置家庭訪談能力訓練系統 <span className="text-xs bg-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/20">v1.3.0</span>
             </h1>
             <p className="text-xs text-slate-400">早療與社工專業訪談模擬 AI 系統</p>
           </div>
@@ -593,58 +592,73 @@ export default function App() {
         </div>
       </header>
 
-              </div>
-              <div>
-                <h3 className="font-bold text-lg text-slate-100">配置 Gemini API 金鑰</h3>
-                <p className="text-xs text-slate-400">需要金鑰以驅動 NPC AI 與評分教練</p>
-              </div>
-            </div>
-            
-            <p className="text-sm text-slate-300 leading-relaxed mb-4">
-              請在下方貼上您的 Google Gemini API Key。此金鑰僅會暫存在您的瀏覽器記憶體中，重新整理網頁即會清除。
-              若要永久設定，請於專案根目錄的 <code className="bg-slate-900 text-indigo-300 px-1 py-0.5 rounded text-xs">.env</code> 檔案中填寫 <code className="bg-slate-900 text-indigo-300 px-1 py-0.5 rounded text-xs">VITE_GEMINI_API_KEY</code>。
-            </p>
-
-            <input 
-              type="password" 
-              placeholder="AIzaSy..." 
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition mb-4"
-            />
-
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-slate-400">
-                沒有金鑰？
-                <a 
-                  href="https://aistudio.google.com/" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-indigo-400 hover:underline ml-1"
-                >
-                  去 Google AI Studio 免費申請
-                </a>
-              </span>
-              <div className="flex gap-2">
-                {isServiceConfigured && (
-                  <button 
-                    onClick={() => setShowKeySetup(false)}
-                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition"
-                  >
-                    取消
-                  </button>
-                )}
-                <button 
-                  onClick={handleSaveTempKey}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-xl shadow-lg shadow-indigo-600/35 transition"
-                >
-                  儲存並開始
-                </button>
-              </div>
-            </div>
-          </div>
+      {/* 若當前視圖為 Supervisor Dashboard，渲染後台主頁 */}
+      {currentView === 'supervisor' ? (
+        <div className="flex-1 overflow-y-auto">
+          <SupervisorDashboard onBackToTraining={() => setCurrentView('student')} />
         </div>
-      )}
+      ) : (
+        /* 原有學生訓練視圖 */
+        <div className="flex flex-col flex-1 overflow-hidden relative">
+          {/* API 金鑰設定彈窗 */}
+          {showKeySetup && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fadeIn">
+              <div className="w-full max-w-md glass-panel p-6 rounded-2xl shadow-2xl border border-slate-700">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400">
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-slate-100">配置 Gemini API 金鑰</h3>
+                    <p className="text-xs text-slate-400">需要金鑰以驅動 NPC AI 與評分教練</p>
+                  </div>
+                </div>
+                
+                <p className="text-sm text-slate-300 leading-relaxed mb-4">
+                  請在下方貼上您的 Google Gemini API Key。此金鑰僅會暫存在您的瀏覽器記憶體中，重新整理網頁即會清除。
+                  若要永久設定，請於專案根目錄的 <code className="bg-slate-900 text-indigo-300 px-1 py-0.5 rounded text-xs">.env</code> 檔案中填寫 <code className="bg-slate-900 text-indigo-300 px-1 py-0.5 rounded text-xs">VITE_GEMINI_API_KEY</code>。
+                </p>
+
+                <input 
+                  type="password" 
+                  placeholder="AIzaSy..." 
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition mb-4"
+                />
+
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-slate-400">
+                    沒有金鑰？
+                    <a 
+                      href="https://aistudio.google.com/" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-indigo-400 hover:underline ml-1"
+                    >
+                      去 Google AI Studio 免費申請
+                    </a>
+                  </span>
+                  <div className="flex gap-2">
+                    {isServiceConfigured && (
+                      <button 
+                        onClick={() => setShowKeySetup(false)}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition"
+                      >
+                        取消
+                      </button>
+                    )}
+                    <button 
+                      onClick={handleSaveTempKey}
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-xl shadow-lg shadow-indigo-600/35 transition"
+                    >
+                      儲存並開始
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
       {/* 主介面左右分欄 */}
       <main className="flex flex-1 overflow-hidden bg-slate-950/50">
@@ -1554,6 +1568,8 @@ export default function App() {
 
       {/* 系統更新日誌彈窗 */}
       <ChangelogModal isOpen={isChangelogOpen} onClose={() => setIsChangelogOpen(false)} />
+        </div>
+      )}
 
     </div>
   );
