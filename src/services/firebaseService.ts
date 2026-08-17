@@ -10,6 +10,23 @@ export interface UserRecord {
   createdAt?: any;        // 建立時間
 }
 
+// 2. 訪談時間軸與關鍵行為時間戳記介面 (Session Timeline)
+export interface SessionTimeline {
+  first_opening_desc_time?: number;     // 首次說明訪談目的時間 (秒)
+  first_empathy_time?: number;          // 首次出現同理回應時間 (秒)
+  first_open_question_time?: number;     // 首次開放式提問時間 (秒)
+  first_routine_question_time?: number;  // 首次作息本位提問時間 (秒)
+  first_child_function_time?: number;    // 首次問到兒童功能表現時間 (秒)
+  first_family_need_time?: number;       // 首次問到家庭需求時間 (秒)
+  first_family_stress_time?: number;     // 首次問到家庭壓力時間 (秒)
+  first_family_strength_time?: number;   // 首次問到家庭優勢時間 (秒)
+  first_support_system_time?: number;   // 首次問到支持系統時間 (秒)
+  first_defense_trigger_time?: number;   // 首次觸發 NPC 防衛時間 (秒)
+  first_repair_success_time?: number;    // 首次成功修復關係時間 (秒)
+  help_request_timestamps: number[];     // 使用暫停求救的所有時間點列表
+  info_check_timestamps: number[];       // 使用資訊盤點的所有時間點列表
+}
+
 // 2. 訪談訓練場次紀錄介面
 export interface TrainingSessionRecord {
   sessionId: string;            // 訪談場次唯一識別碼
@@ -17,6 +34,8 @@ export interface TrainingSessionRecord {
   userName?: string;            // 測試者姓名
   selectedFamilyCase: string;   // 選擇的家庭案例 (例如：'小A家')
   timeLimitSeconds?: number;    // 時間設定 (限制秒數，無限制則不填)
+  selected_duration?: '30' | '60' | '90'; // 設定的訪談長度 (30/60/90 分鐘)
+  actual_duration?: number;     // 實際進行秒數
   startTime?: any;              // 開始時間
   endTime?: any;                // 結束時間
   isCompleted: boolean;         // 是否已結束
@@ -25,6 +44,7 @@ export interface TrainingSessionRecord {
   supervisor_review_status?: 'pending' | 'reviewed'; // 督導審核狀態
   required_repractice?: boolean;               // 是否由督導指定重練
   input_mode?: 'text' | 'voice' | 'mixed';     // 總體輸入模式 (文字/語音/雙模混合)
+  timeline?: SessionTimeline;   // 首發關鍵行為時間軸紀錄
 }
 
 // 3. 對話逐字稿紀錄介面
@@ -160,19 +180,28 @@ export async function startTrainingSessionInFirestore(
  */
 export async function endTrainingSessionInFirestore(
   sessionId: string, 
-  finalRapportScore: number
+  finalRapportScore: number,
+  actualDuration?: number,
+  timeline?: SessionTimeline
 ): Promise<void> {
-  const updateData = {
+  const updateData: any = {
     endTime: serverTimestamp(),
     isCompleted: true,
     finalRapportScore,
   };
 
+  if (actualDuration !== undefined) {
+    updateData.actual_duration = actualDuration;
+  }
+  if (timeline !== undefined) {
+    updateData.timeline = timeline;
+  }
+
   try {
     if (isFirebaseInitialized && db) {
       const sessionRef = doc(db, 'training_sessions', sessionId);
       await updateDoc(sessionRef, updateData);
-      console.log(`[Firebase] 成功更新訓練場次結束狀態: ${sessionId}`);
+      console.log(`[Firebase] 成功更新訓練場次結束狀態與時間軸: ${sessionId}`);
     } else {
       console.log("%c[Firebase Mock 更新]%c doc('training_sessions', '${sessionId}') <- ", 
         "color: #2196F3; font-weight: bold;", "color: inherit;", { ...updateData, endTime: new Date() });

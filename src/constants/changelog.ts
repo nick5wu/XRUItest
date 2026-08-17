@@ -7,6 +7,17 @@ export interface ChangelogItem {
 
 export const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    version: 'v1.5.0',
+    date: '2026-08-17',
+    title: '實作訪談時間軸紀錄 (Timeline Logs) 與 30/60/90 分鐘動態權重系統',
+    changes: [
+      '擴充 Firestore 資料結構：新增 SessionTimeline 介面與 selected_duration、actual_duration 欄位，紀錄 11 項關鍵行為首發時間與求救/盤點時間序列。',
+      '實作 30/60/90 分鐘動態權重評估系統：Gemini 結算報告依時長模式自動切換六大面向權重配比，並回傳 calculated_weights_applied。',
+      '主控制器即時追蹤：App.tsx 於對話送出與求救/盤點時自動捕捉時間點，訪談結束時將時間軸數據一併寫入 Firestore。',
+      'UI 視覺化升級：結算報告進度條依據套用的動態權重比例透明展示各面向百分比。'
+    ]
+  },
+  {
     version: 'v1.4.1',
     date: '2026-08-17',
     title: '優化 NPC 防衛發言機制：廢除前端物理截斷，改由 LLM 原生生成語意完整短句',

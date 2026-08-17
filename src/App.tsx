@@ -22,6 +22,7 @@ import {
   saveAIScoresToFirestore,
   saveSelfReflectionToFirestore
 } from './services/firebaseService';
+import type { SessionTimeline } from './services/firebaseService';
 import { familyCases } from './constants/cases';
 import ChangelogModal from './components/ChangelogModal';
 import SupervisorDashboard from './components/SupervisorDashboard';
@@ -74,6 +75,12 @@ export default function App() {
   const speechStartTimeRef = useRef<number>(0);
   const lastNpcSpeechEndTimeRef = useRef<number>(Date.now());
   const sessionInputModesRef = useRef<Set<'text' | 'voice'>>(new Set());
+
+  // 訪談時間軸紀錄 (Session Timeline) 狀態
+  const [timeline, setTimeline] = useState<SessionTimeline>({
+    help_request_timestamps: [],
+    info_check_timestamps: []
+  });
 
   // Firebase 測試者與場次狀態
   const [userId] = useState(() => 'user_mvp_' + Math.random().toString(36).substring(2, 9));
@@ -237,6 +244,10 @@ export default function App() {
     setTimerActive(false);
     setTimeLeft(0);
     sessionInputModesRef.current.clear();
+    setTimeline({
+      help_request_timestamps: [],
+      info_check_timestamps: []
+    });
   };
 
   // 點擊「開始訪談」後的初始化與 Firebase 註冊行為
@@ -267,6 +278,10 @@ export default function App() {
       setLearningReflection('');
       setNextGoal('');
       sessionInputModesRef.current.clear();
+      setTimeline({
+        help_request_timestamps: [],
+        info_check_timestamps: []
+      });
       
       // 設定計時器時間並啟動
       setTimeLeft(selectedTimeMode * 60);
@@ -306,6 +321,7 @@ export default function App() {
         userId,
         selectedFamilyCase: selectedCase.name,
         timeLimitSeconds: selectedTimeMode * 60,
+        selected_duration: String(selectedTimeMode) as '30' | '60' | '90',
         input_mode: 'mixed'
       });
 
@@ -423,6 +439,94 @@ export default function App() {
         });
       }
 
+      // 關鍵行為首發時間點追蹤 (Session Timeline - First Occurrences Logging)
+      const currentElapsed = Math.max(1, (selectedTimeMode * 60) - timeLeft);
+      setTimeline(prev => {
+        const updated = { ...prev };
+        const tags = response.student_skill_tag || [];
+        const joinedTags = tags.join(' ');
+        const text = traineeText;
+
+        // 1. 首次說明訪談目的
+        if (updated.first_opening_desc_time === undefined) {
+          if (joinedTags.includes('說明訪談目的') || joinedTags.includes('開場') || text.includes('目的') || text.includes('今天來') || text.includes('我是')) {
+            updated.first_opening_desc_time = currentElapsed;
+          }
+        }
+
+        // 2. 首次同理回應
+        if (updated.first_empathy_time === undefined) {
+          if (joinedTags.includes('同理') || joinedTags.includes('同理回應') || text.includes('辛苦') || text.includes('不容易') || text.includes('我理解')) {
+            updated.first_empathy_time = currentElapsed;
+          }
+        }
+
+        // 3. 首次開放式提問
+        if (updated.first_open_question_time === undefined) {
+          if (joinedTags.includes('開放式') || joinedTags.includes('開放式提問') || text.includes('怎麼') || text.includes('如何') || text.includes('什麼樣')) {
+            updated.first_open_question_time = currentElapsed;
+          }
+        }
+
+        // 4. 首次作息本位提問
+        if (updated.first_routine_question_time === undefined) {
+          if (joinedTags.includes('作息') || joinedTags.includes('日常') || text.includes('作息') || text.includes('平常') || text.includes('一天') || text.includes('早上') || text.includes('吃飯')) {
+            updated.first_routine_question_time = currentElapsed;
+          }
+        }
+
+        // 5. 首次問到兒童功能表現
+        if (updated.first_child_function_time === undefined) {
+          if (response.question_target === 'child' || text.includes('會不會') || text.includes('發展') || text.includes('講話') || text.includes('走路') || text.includes('動作')) {
+            updated.first_child_function_time = currentElapsed;
+          }
+        }
+
+        // 6. 首次問到家庭需求
+        if (updated.first_family_need_time === undefined) {
+          if (joinedTags.includes('家庭需求') || text.includes('需要') || text.includes('希望') || text.includes('幫忙') || text.includes('期待')) {
+            updated.first_family_need_time = currentElapsed;
+          }
+        }
+
+        // 7. 首次問到家庭壓力
+        if (updated.first_family_stress_time === undefined) {
+          if (joinedTags.includes('照顧壓力') || text.includes('壓力') || text.includes('累') || text.includes('負擔') || text.includes('辛苦')) {
+            updated.first_family_stress_time = currentElapsed;
+          }
+        }
+
+        // 8. 首次問到家庭優勢
+        if (updated.first_family_strength_time === undefined) {
+          if (joinedTags.includes('優勢') || joinedTags.includes('優勢導向') || text.includes('擅長') || text.includes('喜歡') || text.includes('很棒') || text.includes('做得好')) {
+            updated.first_family_strength_time = currentElapsed;
+          }
+        }
+
+        // 9. 首次問到支持系統
+        if (updated.first_support_system_time === undefined) {
+          if (joinedTags.includes('支持系統') || joinedTags.includes('社會支持') || text.includes('家人') || text.includes('幫手') || text.includes('資源') || text.includes('親友') || text.includes('補助')) {
+            updated.first_support_system_time = currentElapsed;
+          }
+        }
+
+        // 10. 首次觸發 NPC 防衛
+        if (updated.first_defense_trigger_time === undefined) {
+          if (response.npc_emotion_tag === 'defensive' || response.defense_score > 60 || calculatedScore < 30 || response.sensitive_triggered) {
+            updated.first_defense_trigger_time = currentElapsed;
+          }
+        }
+
+        // 11. 首次成功修復關係
+        if (updated.first_repair_success_time === undefined && updated.first_defense_trigger_time !== undefined) {
+          if (response.rapport_score_change > 0 && (response.npc_emotion_tag === 'relaxed' || calculatedScore >= 45)) {
+            updated.first_repair_success_time = currentElapsed;
+          }
+        }
+
+        return updated;
+      });
+
       // 7. 新增 NPC 回應訊息到 UI
       const npcMsgId = `npc-${Date.now()}`;
       const npcMessage: Message = {
@@ -509,6 +613,12 @@ export default function App() {
     // 強制暫停播放中的 NPC 語音
     cancelSpeech();
 
+    const currentElapsed = Math.max(1, (selectedTimeMode * 60) - timeLeft);
+    setTimeline(prev => ({
+      ...prev,
+      help_request_timestamps: [...prev.help_request_timestamps, currentElapsed]
+    }));
+
     setIsLoadingSuggestion(true);
     try {
       const data = await geminiServiceRef.current.getHelpSuggestion(rapportScore);
@@ -528,6 +638,12 @@ export default function App() {
     if (isEnded || isTyping || !isServiceConfigured) return;
 
     cancelSpeech();
+
+    const currentElapsed = Math.max(1, (selectedTimeMode * 60) - timeLeft);
+    setTimeline(prev => ({
+      ...prev,
+      info_check_timestamps: [...prev.info_check_timestamps, currentElapsed]
+    }));
 
     setIsCheckingInfo(true);
     try {
@@ -549,13 +665,19 @@ export default function App() {
     setIsGeneratingReport(true); // 顯示產生報告中...載入畫面
     setTimerActive(false); // 停止倒數計時
 
+    const actualDuration = Math.max(1, (selectedTimeMode * 60) - timeLeft);
+
     if (sessionId) {
-      endTrainingSessionInFirestore(sessionId, rapportScore);
+      endTrainingSessionInFirestore(sessionId, rapportScore, actualDuration, timeline);
     }
 
     try {
-      // 呼叫 AI 評估六大面向能力
-      const report = await geminiServiceRef.current.generateFinalEvaluationReport(rapportScore, selectedCaseId);
+      // 呼叫 AI 評估六大面向能力 (依據 30/60/90 分鐘動態權重規準)
+      const report = await geminiServiceRef.current.generateFinalEvaluationReport(
+        rapportScore, 
+        selectedCaseId, 
+        selectedTimeMode
+      );
       setFinalScoresReport(report);
 
       // 寫入 Firestore ai_scores 資料表
@@ -1257,85 +1379,101 @@ export default function App() {
               {endModalTab === 'ai_report' && (
                 <>
                   {/* 六大面向分數進度條 */}
-                  {finalScoresReport ? (
-                    <div className="space-y-2.5 pt-1">
-                      <span className="text-[11px] font-bold text-slate-300 block">📊 六大核心能力面向評分：</span>
-                      
-                      {/* 1. 開場與關係建立 */}
-                      <div>
-                        <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                          <span>1. 開場與關係建立 (15%)</span>
-                          <span className="font-bold text-indigo-300">{finalScoresReport.relationship_score}分</span>
-                        </div>
-                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                          <div className="bg-indigo-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.relationship_score}%` }}></div>
-                        </div>
-                      </div>
+                  {finalScoresReport ? (() => {
+                    const weights = finalScoresReport.calculated_weights_applied || {
+                      relationship: selectedTimeMode <= 30 ? 20 : 15,
+                      questioning: selectedTimeMode <= 30 ? 30 : (selectedTimeMode <= 60 ? 25 : 20),
+                      empathy: selectedTimeMode <= 30 ? 25 : (selectedTimeMode <= 60 ? 20 : 25),
+                      family_centered: selectedTimeMode <= 30 ? 0 : 15,
+                      information: 20,
+                      time: 5
+                    };
 
-                      {/* 2. 提問技巧與作息本位 */}
-                      <div>
-                        <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                          <span>2. 提問技巧與作息本位 (25%)</span>
-                          <span className="font-bold text-indigo-300">{finalScoresReport.questioning_score}分</span>
+                    return (
+                      <div className="space-y-2.5 pt-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-300 block">📊 六大核心能力面向評分：</span>
+                          <span className="text-[10px] text-indigo-400 bg-indigo-950/60 border border-indigo-800/60 px-2 py-0.5 rounded-md font-semibold">
+                            時長模式：{selectedTimeMode} 分鐘動態權重
+                          </span>
                         </div>
-                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                          <div className="bg-blue-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.questioning_score}%` }}></div>
+                        
+                        {/* 1. 開場與關係建立 */}
+                        <div>
+                          <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                            <span>1. 開場與關係建立 ({weights.relationship}%)</span>
+                            <span className="font-bold text-indigo-300">{finalScoresReport.relationship_score}分</span>
+                          </div>
+                          <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                            <div className="bg-indigo-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.relationship_score}%` }}></div>
+                          </div>
                         </div>
-                      </div>
 
-                      {/* 3. 同理、敏感度與非評價態度 */}
-                      <div>
-                        <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                          <span>3. 同理與非評價態度 (20%)</span>
-                          <span className="font-bold text-indigo-300">{finalScoresReport.empathy_score}分</span>
+                        {/* 2. 提問技巧與作息本位 */}
+                        <div>
+                          <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                            <span>2. 提問技巧與作息本位 ({weights.questioning}%)</span>
+                            <span className="font-bold text-indigo-300">{finalScoresReport.questioning_score}分</span>
+                          </div>
+                          <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                            <div className="bg-blue-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.questioning_score}%` }}></div>
+                          </div>
                         </div>
-                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                          <div className="bg-purple-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.empathy_score}%` }}></div>
-                        </div>
-                      </div>
 
-                      {/* 4. 家庭中心與優勢導向 */}
-                      <div>
-                        <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                          <span>4. 家庭中心與優勢導向 (15%)</span>
-                          <span className="font-bold text-indigo-300">{finalScoresReport.family_centered_score}分</span>
+                        {/* 3. 同理、敏感度與非評價態度 */}
+                        <div>
+                          <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                            <span>3. 同理與非評價態度 ({weights.empathy}%)</span>
+                            <span className="font-bold text-indigo-300">{finalScoresReport.empathy_score}分</span>
+                          </div>
+                          <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                            <div className="bg-purple-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.empathy_score}%` }}></div>
+                          </div>
                         </div>
-                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                          <div className="bg-pink-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.family_centered_score}%` }}></div>
-                        </div>
-                      </div>
 
-                      {/* 5. IFSP資訊完整度 */}
-                      <div>
-                        <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                          <span>5. IFSP前置資訊完整度 (20%)</span>
-                          <span className="font-bold text-indigo-300">{finalScoresReport.information_score}分</span>
+                        {/* 4. 家庭中心與優勢導向 */}
+                        <div>
+                          <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                            <span>4. 家庭中心與優勢導向 ({weights.family_centered}%)</span>
+                            <span className="font-bold text-indigo-300">{finalScoresReport.family_centered_score}分</span>
+                          </div>
+                          <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                            <div className="bg-pink-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.family_centered_score}%` }}></div>
+                          </div>
                         </div>
-                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                          <div className="bg-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.information_score}%` }}></div>
-                        </div>
-                      </div>
 
-                      {/* 6. 時間任務完成 */}
-                      <div>
-                        <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
-                          <span>6. 時間內任務完成 (5%)</span>
-                          <span className="font-bold text-indigo-300">{finalScoresReport.time_score}分</span>
+                        {/* 5. IFSP資訊完整度 */}
+                        <div>
+                          <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                            <span>5. IFSP前置資訊完整度 ({weights.information}%)</span>
+                            <span className="font-bold text-indigo-300">{finalScoresReport.information_score}分</span>
+                          </div>
+                          <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                            <div className="bg-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.information_score}%` }}></div>
+                          </div>
                         </div>
-                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-                          <div className="bg-amber-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.time_score}%` }}></div>
-                        </div>
-                      </div>
 
-                      {/* 綜合建議 */}
-                      <div className="pt-2">
-                        <span className="text-[11px] font-bold text-slate-300 block mb-1">📝 AI 督導總結建議：</span>
-                        <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 max-h-32 overflow-y-auto font-sans">
-                          {finalScoresReport.evaluation_summary}
-                        </p>
+                        {/* 6. 時間任務完成 */}
+                        <div>
+                          <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                            <span>6. 時間內任務完成 ({weights.time}%)</span>
+                            <span className="font-bold text-indigo-300">{finalScoresReport.time_score}分</span>
+                          </div>
+                          <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                            <div className="bg-amber-500 h-full rounded-full transition-all duration-500" style={{ width: `${finalScoresReport.time_score}%` }}></div>
+                          </div>
+                        </div>
+
+                        {/* 綜合建議 */}
+                        <div className="pt-2">
+                          <span className="text-[11px] font-bold text-slate-300 block mb-1">📝 AI 督導總結建議：</span>
+                          <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 max-h-32 overflow-y-auto font-sans">
+                            {finalScoresReport.evaluation_summary}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ) : (
+                    );
+                  })() : (
                     <div className="space-y-3">
                       <div className="flex justify-between items-center text-xs text-slate-300">
                         <span>關係分數:</span>

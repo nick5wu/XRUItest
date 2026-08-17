@@ -26,14 +26,93 @@ export interface InfoCheckResponse {
 }
 
 export interface FinalEvaluationResponse {
-  relationship_score: number;       // 開場與關係建立 (15%)
-  questioning_score: number;        // 提問技巧與作息本位 (25%)
-  empathy_score: number;            // 同理、敏感度與非評價態度 (20%)
-  family_centered_score: number;    // 家庭中心與優勢導向 (15%)
-  information_score: number;        // IFSP前置資訊完整度 (20%)
-  time_score: number;               // 時間內任務完成 (5%)
+  relationship_score: number;       // 開場與關係建立
+  questioning_score: number;        // 提問技巧與作息本位
+  empathy_score: number;            // 同理、敏感度與非評價態度
+  family_centered_score: number;    // 家庭中心與優勢導向
+  information_score: number;        // IFSP前置資訊完整度
+  time_score: number;               // 時間內任務完成
   total_score: number;              // 總分 (100分制)
   evaluation_summary: string;       // 評估總結與具體建議
+  calculated_weights_applied?: {    // 該場次應用的動態權重分配比例 (%)
+    relationship: number;
+    questioning: number;
+    empathy: number;
+    family_centered: number;
+    information: number;
+    time: number;
+  };
+}
+
+function buildEvaluationInstruction(selectedDuration: number | string): string {
+  const durationNum = Number(selectedDuration) || 30;
+
+  let weightDescription = '';
+  let weightsJson = '';
+
+  if (durationNum <= 30) {
+    weightDescription = `
+【30 分鐘模式 (短版訓練) 評分規準】
+重點在於「能不能開始一場好的訪談」與基本探索，不苛求完整家庭與資源資料：
+1. relationship_score (開場與關係建立，20%)：開場態度、破冰技巧、自我介紹與目標說明。
+2. questioning_score (提問技巧與作息本位，30%)：是否多用開放式提問、是否圍繞日常作息而非單純審問。
+3. empathy_score (同理、敏感度與非評價態度，25%)：能否及時辨識家長情緒、給予同理支持、無評價用語。
+4. family_centered_score (家庭中心與優勢導向，0%)：短版訓練不強制要求深度家庭賦權，請給予基準評分 70 分，權重不計入總分。
+5. information_score (核心資訊蒐集，20%)：重點在於兒童主要發展狀況與基本家庭結構探索。
+6. time_score (時間組織，5%)：時間掌控與短版步調流暢度。
+
+【總分計算公式】：
+total_score = Math.round(relationship_score * 0.20 + questioning_score * 0.30 + empathy_score * 0.25 + information_score * 0.20 + time_score * 0.05)`;
+    weightsJson = `"calculated_weights_applied": { "relationship": 20, "questioning": 30, "empathy": 25, "family_centered": 0, "information": 20, "time": 5 }`;
+  } else if (durationNum <= 60) {
+    weightDescription = `
+【60 分鐘模式 (標準訓練) 評分規準】
+標準完整家庭訪談，全面檢估六大面向：
+1. relationship_score (開場與關係建立，15%)：開場態度、破冰技巧與禮貌。
+2. questioning_score (提問技巧與作息本位，25%)：是否多用開放式提問、是否圍繞日常作息而非單純審問。
+3. empathy_score (同理、敏感度與非評價態度，20%)：能否及時辨識家長情緒、給予同理支持、無評價用語。
+4. family_centered_score (家庭中心與優勢導向，15%)：焦點是否關注家長照顧壓力與需求，探索家庭優勢與支持網絡。
+5. information_score (IFSP前置資訊完整度，20%)：是否成功蒐集到家庭結構、經濟現況與發展照顧歷史。
+6. time_score (時間內任務完成，5%)：訪談步調控管、時間結束前的結尾狀況。
+
+【總分計算公式】：
+total_score = Math.round(relationship_score * 0.15 + questioning_score * 0.25 + empathy_score * 0.20 + family_centered_score * 0.15 + information_score * 0.20 + time_score * 0.05)`;
+    weightsJson = `"calculated_weights_applied": { "relationship": 15, "questioning": 25, "empathy": 20, "family_centered": 15, "information": 20, "time": 5 }`;
+  } else {
+    weightDescription = `
+【90 分鐘模式 (深度訓練) 評分規準】
+著重進階督導與複雜個案，嚴格考驗敏感議題深入探討、痛點修復與賦權：
+1. relationship_score (開場與關係建立，15%)：開場態度、破冰技巧與禮貌。
+2. questioning_score (提問技巧與作息本位，20%)：是否多用開放式提問、是否圍繞日常作息。
+3. empathy_score (同理、敏感度與非評價態度，25%)：高防衛狀態下的同理修復、情緒敏銳度與耐受力。
+4. family_centered_score (家庭中心與優勢導向，15%)：深度探討家庭支持系統、非正式資源與家庭賦權。
+5. information_score (IFSP前置資訊完整度，20%)：全面且深度的家庭脈絡、歷史及需求資料。
+6. time_score (時間內任務完成，5%)：長時段訪談的架構掌控、節奏分段與收斂結尾。
+
+【總分計算公式】：
+total_score = Math.round(relationship_score * 0.15 + questioning_score * 0.20 + empathy_score * 0.25 + family_centered_score * 0.15 + information_score * 0.20 + time_score * 0.05)`;
+    weightsJson = `"calculated_weights_applied": { "relationship": 15, "questioning": 20, "empathy": 25, "family_centered": 15, "information": 20, "time": 5 }`;
+  }
+
+  return `你現在是「IFSP 前置家庭訪談能力訓練系統」中的專業督導考官。
+你需要仔細審閱受訓人員（社工/早療人員）與受訪家長的全場對話逐字稿，並嚴格依據 100 分制與本場次設定的訪談時長 (${durationNum} 分鐘) 執行動態權重評估：
+${weightDescription}
+
+請計算各項數值（0~100 的得分），並依上方公式計算算出 total_score (100分制總分)，最後寫出一段綜合評估總結建議 (evaluation_summary)。
+
+【強制 JSON 輸出 Schema】
+你必須嚴格按照以下 JSON 結構回傳，不可夾帶任何 Markdown 標記：
+{
+  "relationship_score": 數值 (0-100),
+  "questioning_score": 數值 (0-100),
+  "empathy_score": 數值 (0-100),
+  "family_centered_score": 數值 (0-100),
+  "information_score": 數值 (0-100),
+  "time_score": 數值 (0-100),
+  "total_score": 數值 (0-100),
+  "evaluation_summary": "具體詳細的總結建議說明",
+  ${weightsJson}
+}`;
 }
 
 function buildSystemInstruction(selectedCase: FamilyCase, timeMode: number): string {
@@ -116,32 +195,6 @@ const CHECK_SYSTEM_INSTRUCTION = `你現在是「IFSP 前置家庭訪談能力�
     "achieved": true 或者是 false,
     "evidence": "簡短說明"
   }
-}`;
-
-const EVALUATION_SYSTEM_INSTRUCTION = `你現在是「IFSP 前置家庭訪談能力訓練系統」中的專業督導考官。
-你需要仔細審閱受訓人員（社工/早療人員）與受訪家長的全場對話逐字稿，並嚴格依據 100 分制計算六大核心面向得分：
-
-【六大面向權重基準】
-1. relationship_score (開場與關係建立，15%)：開場態度、破冰技巧與禮貌。
-2. questioning_score (提問技巧與作息本位，25%)：是否多用開放式提問、是否圍繞日常作息而非單純審問。
-3. empathy_score (同理、敏感度與非評價態度，20%)：能否及時辨識家長情緒、給予同理支持、無評價用語。
-4. family_centered_score (家庭中心與優勢導向，15%)：焦點是否關注家長照顧壓力與需求，而非死板質問兒童障礙。
-5. information_score (IFSP前置資訊完整度，20%)：是否成功蒐集到家庭結構、經濟現況與發展照顧歷史。
-6. time_score (時間內任務完成，5%)：訪談步調控管、時間結束前的結尾狀況。
-
-請計算各項數值（0~100 的得分），並依權重計算算出 total_score (100分制總分)，最後寫出一段綜合評估總結建議 (evaluation_summary)。
-
-【強制 JSON 輸出 Schema】
-你必須嚴格按照以下 JSON 結構回傳，不可夾帶任何 Markdown 標記：
-{
-  "relationship_score": 數值 (0-100),
-  "questioning_score": 數值 (0-100),
-  "empathy_score": 數值 (0-100),
-  "family_centered_score": 數值 (0-100),
-  "information_score": 數值 (0-100),
-  "time_score": 數值 (0-100),
-  "total_score": 數值 (0-100),
-  "evaluation_summary": "具體詳細的總結建議說明"
 }`;
 
 function safeParseJSON<T>(text: string): T {
@@ -376,11 +429,12 @@ export class GeminiService {
   }
 
   /**
-   * 產出六大面向結算報告與總分
+   * 產出六大面向結算報告與總分 (支援 30/60/90 分鐘動態權重規準)
    */
   public async generateFinalEvaluationReport(
     finalRapportScore: number,
-    caseId: string
+    caseId: string,
+    selectedDuration: number | string = 30
   ): Promise<FinalEvaluationResponse> {
     if (!this.genAI || !this.chatSession) {
       throw new Error("Gemini 服務未初始化。");
@@ -405,14 +459,14 @@ export class GeminiService {
 
       const model = this.genAI.getGenerativeModel({
         model: "gemini-2.5-flash",
-        systemInstruction: EVALUATION_SYSTEM_INSTRUCTION,
+        systemInstruction: buildEvaluationInstruction(selectedDuration),
         generationConfig: {
           responseMimeType: "application/json",
           temperature: 0.3,
         }
       });
 
-      const prompt = `【案例設定】：${selectedCase.name}\n【最終關係分數】：${finalRapportScore}\n【全場訪談對話逐字稿】：\n${formattedHistory}\n\n請對上述訪談進行六大能力面向考核並輸出評估報告。`;
+      const prompt = `【案例設定】：${selectedCase.name}\n【設定時長】：${selectedDuration} 分鐘\n【最終關係分數】：${finalRapportScore}\n【全場訪談對話逐字稿】：\n${formattedHistory}\n\n請對上述訪談進行六大能力面向考核並依 ${selectedDuration} 分鐘動態權重規準輸出評估報告。`;
       const result = await model.generateContent(prompt);
       const text = result.response.text();
 
