@@ -7,7 +7,9 @@ import {
   Sparkles, 
   User, 
   Lock, 
-  AlertCircle
+  AlertCircle,
+  Mic,
+  Volume2
 } from 'lucide-react';
 import { GeminiService } from './services/geminiService';
 import type { GeminiResponse, InfoCheckResponse, FinalEvaluationResponse } from './services/geminiService';
@@ -24,6 +26,7 @@ import { familyCases } from './constants/cases';
 import ChangelogModal from './components/ChangelogModal';
 import SupervisorDashboard from './components/SupervisorDashboard';
 import { CHANGELOG_DATA } from './constants/changelog';
+import { useWebSpeech } from './hooks/useWebSpeech';
 
 
 interface Message {
@@ -54,6 +57,23 @@ export default function App() {
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [isServiceConfigured, setIsServiceConfigured] = useState(false);
   const [showKeySetup, setShowKeySetup] = useState(false);
+
+  // Web Speech 語音互動 Hook (STT 語音轉文字 + TTS 文字轉語音)
+  const {
+    isListening,
+    recognitionText,
+    startListening,
+    stopListening,
+    resetRecognitionText,
+    isSpeaking,
+    speakText,
+    cancelSpeech
+  } = useWebSpeech();
+
+  // 語音特徵計算與時間追蹤 Refs
+  const speechStartTimeRef = useRef<number>(0);
+  const lastNpcSpeechEndTimeRef = useRef<number>(Date.now());
+  const sessionInputModesRef = useRef<Set<'text' | 'voice'>>(new Set());
 
   // Firebase 測試者與場次狀態
   const [userId] = useState(() => 'user_mvp_' + Math.random().toString(36).substring(2, 9));
@@ -166,6 +186,28 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [timeLeft, timerActive, isEnded, isChatStarted]);
 
+  // STT 轉錄文字自動發送 effect
+  useEffect(() => {
+    if (recognitionText && recognitionText.trim() && !isTyping && !isEnded && isServiceConfigured) {
+      const text = recognitionText.trim();
+      resetRecognitionText();
+
+      const now = Date.now();
+      const speechDuration = speechStartTimeRef.current 
+        ? Math.max(1, Math.round((now - speechStartTimeRef.current) / 1000))
+        : 2;
+      const pauseDuration = lastNpcSpeechEndTimeRef.current 
+        ? Math.max(0, Number(((now - lastNpcSpeechEndTimeRef.current) / 1000).toFixed(1)))
+        : 0;
+      const speechRate = Number((text.length / speechDuration).toFixed(2));
+
+      handleSendMessage(undefined, text, 'voice', {
+        speech_duration: speechDuration,
+        pause_before_response: pauseDuration,
+        speech_rate: speechRate
+      });
+    }
+  }, [recognitionText, isTyping, isEnded, isServiceConfigured]);
 
   // 設定暫存金鑰
   const handleSaveTempKey = () => {
@@ -187,12 +229,14 @@ export default function App() {
 
   // 啟動或重新開始對話 (回到設定面板)
   const handleRestartChat = () => {
+    cancelSpeech();
     setIsChatStarted(false);
     setIsEnded(false);
     setMessages([]);
     setSessionId('');
     setTimerActive(false);
     setTimeLeft(0);
+    sessionInputModesRef.current.clear();
   };
 
   // 點擊「開始訪談」後的初始化與 Firebase 註冊行為
@@ -201,6 +245,8 @@ export default function App() {
       setShowKeySetup(true);
       return;
     }
+
+    cancelSpeech();
 
     try {
       setIsChatStarted(true);
@@ -220,11 +266,11 @@ export default function App() {
       setDifficultMoment('');
       setLearningReflection('');
       setNextGoal('');
+      sessionInputModesRef.current.clear();
       
       // 設定計時器時間並啟動
       setTimeLeft(selectedTimeMode * 60);
       setTimerActive(true);
-
 
       const service = geminiServiceRef.current;
       const initialResponse = service.startNewChat(initialScore, selectedCaseId, selectedTimeMode);
@@ -259,7 +305,8 @@ export default function App() {
         sessionId: newSessionId,
         userId,
         selectedFamilyCase: selectedCase.name,
-        timeLimitSeconds: selectedTimeMode * 60
+        timeLimitSeconds: selectedTimeMode * 60,
+        input_mode: 'mixed'
       });
 
       // 3. 寫入初始對話記錄
@@ -268,7 +315,8 @@ export default function App() {
         speaker: 'npc',
         text: initialResponse.npc_reply,
         rapport_score: initialScore,
-        student_skill_tag: initialResponse.student_skill_tag
+        student_skill_tag: initialResponse.student_skill_tag,
+        input_mode: 'voice'
       });
 
       // 4. 寫入初始 NPC 狀態軌跡 (npc_state_logs)
@@ -280,6 +328,10 @@ export default function App() {
         sensitive_triggered: initialResponse.sensitive_triggered
       });
 
+      // 5. 播放 NPC 初始語音 (TTS)
+      speakText(initialResponse.npc_reply, selectedCase.name);
+      lastNpcSpeechEndTimeRef.current = Date.now();
+
     } catch (err: any) {
       console.error(err);
       alert(err.message || "啟動對話失敗");
@@ -289,13 +341,31 @@ export default function App() {
     }
   };
 
-  // 送出學員對話
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  // 送出學員對話 (支援文字與語音雙模輸入)
+  const handleSendMessage = async (
+    e?: React.FormEvent,
+    overrideText?: string,
+    inputMode: 'text' | 'voice' = 'text',
+    speechMetrics?: {
+      speech_duration?: number;
+      pause_before_response?: number;
+      speech_rate?: number;
+      tone_marker?: string;
+    }
+  ) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || isTyping || isEnded || !isServiceConfigured) return;
+    const traineeText = (overrideText !== undefined ? overrideText : inputText).trim();
+    if (!traineeText || isTyping || isEnded || !isServiceConfigured) return;
 
-    const traineeText = inputText.trim();
-    setInputText('');
+    if (overrideText === undefined) {
+      setInputText('');
+    }
+
+    // 中斷當前播放中的 NPC 語音
+    cancelSpeech();
+
+    // 紀錄本場次的輸入模式
+    sessionInputModesRef.current.add(inputMode);
 
     // 1. 新增學員訊息到 UI
     const traineeMsgId = `trainee-${Date.now()}`;
@@ -371,13 +441,23 @@ export default function App() {
 
       setMessages(prev => [...prev, npcMessage]);
 
-      // 8. 異步寫入 Firestore（受訓人員的對話）
+      // 8. 播放 NPC 聲音 (TTS)
+      const activeCase = familyCases.find(c => c.id === selectedCaseId) || familyCases[0];
+      speakText(finalNpcReply, activeCase.name);
+      lastNpcSpeechEndTimeRef.current = Date.now();
+
+      // 9. 異步寫入 Firestore（受訓人員的對話）
       saveUtteranceToFirestore({
         session_id: sessionId,
         speaker: 'student',
         text: traineeText,
         rapport_score: calculatedScore,
-        student_skill_tag: response.student_skill_tag
+        student_skill_tag: response.student_skill_tag,
+        input_mode: inputMode,
+        speech_duration: speechMetrics?.speech_duration,
+        pause_before_response: speechMetrics?.pause_before_response,
+        speech_rate: speechMetrics?.speech_rate,
+        tone_marker: speechMetrics?.tone_marker
       });
 
       // 異步寫入 Firestore（NPC 的回應）
@@ -386,10 +466,11 @@ export default function App() {
         speaker: 'npc',
         text: finalNpcReply,
         rapport_score: calculatedScore,
-        student_skill_tag: []
+        student_skill_tag: [],
+        input_mode: 'voice'
       });
 
-      // 9. 寫入 NPC 心理狀態軌跡 (npc_state_logs)
+      // 10. 寫入 NPC 心理狀態軌跡 (npc_state_logs)
       saveNPCStateLogToFirestore({
         session_id: sessionId,
         trust_score: response.trust_score,
@@ -428,6 +509,9 @@ export default function App() {
   const handleHelpSeek = async () => {
     if (isEnded || isTyping || !isServiceConfigured) return;
 
+    // 強制暫停播放中的 NPC 語音
+    cancelSpeech();
+
     setIsLoadingSuggestion(true);
     try {
       const data = await geminiServiceRef.current.getHelpSuggestion(rapportScore);
@@ -446,6 +530,8 @@ export default function App() {
   const handleCheckInfo = async () => {
     if (isEnded || isTyping || !isServiceConfigured) return;
 
+    cancelSpeech();
+
     setIsCheckingInfo(true);
     try {
       const data = await geminiServiceRef.current.checkIFSPInformation();
@@ -461,6 +547,7 @@ export default function App() {
 
   // 結束訪談（按鈕點擊，觸發載入與鎖定對話）🛑
   const handleEndInterviewClick = async () => {
+    cancelSpeech();
     setIsEnded(true); // 鎖定對話框，不讓使用者繼續輸入
     setIsGeneratingReport(true); // 顯示產生報告中...載入畫面
     setTimerActive(false); // 停止倒數計時
@@ -910,6 +997,14 @@ export default function App() {
               );
             })()}
 
+            {/* NPC 語音播放中提示 */}
+            {isSpeaking && (
+              <div className="flex items-center gap-2 text-xs text-pink-300 bg-pink-950/40 border border-pink-500/30 px-3 py-1.5 rounded-xl w-fit animate-pulse shadow-sm">
+                <Volume2 className="w-4 h-4 text-pink-400 animate-bounce shrink-0" />
+                <span className="font-semibold">📢 家長正在說話中... (點選麥克風或暫停求救可中斷)</span>
+              </div>
+            )}
+
             <div ref={chatEndRef} />
           </div>
 
@@ -918,22 +1013,59 @@ export default function App() {
           {/* 底部輸入欄 */}
           <div className="p-4 bg-slate-900/60 border-t border-slate-900 shrink-0">
             <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
+              {/* 🎙️ 麥克風按鈕（按住說話，放開送出） */}
+              <button
+                type="button"
+                onMouseDown={() => {
+                  if (isEnded || !isServiceConfigured || isTyping) return;
+                  cancelSpeech();
+                  speechStartTimeRef.current = Date.now();
+                  startListening();
+                }}
+                onMouseUp={() => {
+                  if (isListening) {
+                    stopListening();
+                  }
+                }}
+                onTouchStart={() => {
+                  if (isEnded || !isServiceConfigured || isTyping) return;
+                  cancelSpeech();
+                  speechStartTimeRef.current = Date.now();
+                  startListening();
+                }}
+                onTouchEnd={() => {
+                  if (isListening) {
+                    stopListening();
+                  }
+                }}
+                disabled={isEnded || !isServiceConfigured || isTyping}
+                title={isListening ? '放開以送出語音' : '按住說話，放開送出'}
+                className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer select-none ${
+                  isListening
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/50 animate-pulse scale-105'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 disabled:opacity-50 disabled:cursor-not-allowed'
+                }`}
+              >
+                <Mic className={`w-5 h-5 ${isListening ? 'animate-bounce' : ''}`} />
+              </button>
+
               <input 
                 type="text" 
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                disabled={isEnded || !isServiceConfigured}
+                disabled={isEnded || !isServiceConfigured || isListening}
                 placeholder={
                   !isServiceConfigured ? '請先設定右上角的 Gemini 金鑰' :
                   isEnded ? '訪談已結束，點選右側「重新開始」按鈕以開啟新練習。' : 
-                  '請以專業社工技巧展開提問或同理家長...'
+                  isListening ? '🎙️ 正在聆聽您的聲音，放開按鈕即刻送出...' :
+                  '請以專業社工技巧展開提問，或長按左側麥克風語音輸入...'
                 }
                 className="flex-1 bg-slate-950/80 border border-slate-800 focus:border-indigo-500 rounded-xl px-4 py-3.5 text-sm text-slate-200 focus:outline-none transition disabled:opacity-60"
               />
               <button 
                 type="submit" 
-                disabled={isEnded || !inputText.trim() || isTyping || !isServiceConfigured}
-                className="w-12 h-12 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30 transition duration-200 shrink-0"
+                disabled={isEnded || !inputText.trim() || isTyping || !isServiceConfigured || isListening}
+                className="w-12 h-12 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30 transition duration-200 shrink-0 cursor-pointer"
               >
                 <Send className="w-5 h-5" />
               </button>

@@ -24,6 +24,7 @@ export interface TrainingSessionRecord {
   self_reflection_completed?: boolean;         // 學生是否完成自評與反思
   supervisor_review_status?: 'pending' | 'reviewed'; // 督導審核狀態
   required_repractice?: boolean;               // 是否由督導指定重練
+  input_mode?: 'text' | 'voice' | 'mixed';     // 總體輸入模式 (文字/語音/雙模混合)
 }
 
 // 3. 對話逐字稿紀錄介面
@@ -34,6 +35,11 @@ export interface UtteranceRecord {
   timestamp?: any;                // 時間戳記
   rapport_score: number;          // 當前或該發言後的關係分數
   student_skill_tag: string[];    // 學員對話所展現的技巧標籤
+  input_mode?: 'text' | 'voice' | 'mixed'; // 單句輸入模式
+  speech_duration?: number;       // 發話秒數 (Speech Duration)
+  pause_before_response?: number; // 發話前停頓時間 (Pause Before Response)
+  speech_rate?: number;           // 語速 (Speech Rate - 字/秒)
+  tone_marker?: string;           // 語氣/語調標記 (Tone Marker)
 }
 
 // 4. NPC 心理狀態軌跡紀錄介面 (npc_state_logs 集合)
