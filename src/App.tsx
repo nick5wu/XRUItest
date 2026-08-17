@@ -405,11 +405,8 @@ export default function App() {
         setFamilyQuestionCount(prev => prev + 1);
       }
 
-      // 5. 關係分數與情緒連動：硬性字數限制攔截 (Hard Rule)
-      let finalNpcReply = response.npc_reply;
-      if ((calculatedScore < 30 || response.npc_emotion_tag === 'defensive') && finalNpcReply.length > 10) {
-        finalNpcReply = finalNpcReply.substring(0, 10) + "...";
-      }
+      // 5. 關係分數與情緒連動：廢除前端物理截斷，直接採用 Gemini 原生完整短句
+      const finalNpcReply = response.npc_reply;
 
       // 6. 更新分析面板
       setLatestAnalysis({

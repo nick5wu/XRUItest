@@ -7,6 +7,15 @@ export interface ChangelogItem {
 
 export const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    version: 'v1.4.1',
+    date: '2026-08-17',
+    title: '優化 NPC 防衛發言機制：廢除前端物理截斷，改由 LLM 原生生成語意完整短句',
+    changes: [
+      '移除 App.tsx 前端 substring(0, 10) 物理截斷邏輯，徹底消除 NPC 防衛時語句未完斷裂的問題。',
+      '精準化 geminiService.ts System Instruction：於防衛狀態 (Rapport < 30 / defensive) 下嚴格要求 10 字以內且語意完全完整、末尾帶有結束標點符號的冷淡短句。'
+    ]
+  },
+  {
     version: 'v1.4.0',
     date: '2026-08-17',
     title: '新增原生語音互動功能 (STT 語音轉文字 + TTS 文字轉語音) 與雙模數據管線',
@@ -14,7 +23,7 @@ export const CHANGELOG_DATA: ChangelogItem[] = [
       '新增 useWebSpeech Hook：封裝原生 Web Speech API，支援繁體中文語音轉錄 (STT) 與文字發聲 (TTS)。',
       '實作 NPC 家長語音發聲 (TTS)：依角色人設動態微調語速與音調（外婆/阿嬤採用低緩沉穩語調，年輕家長採用清晰明快語調）。',
       '主介面新增「按住說話，放開送出」麥克風按鈕與 NPC 說話狀態即時提示。',
-      '擴充 Firestore 逐字稿與場次資料表：新增 input_mode、發話秒數 (speech_duration)、停頓時間 (pause_before_response) 與語速 (speech_rate) 欄位，預留 Unity XR 與 Whisper/Azure 對接管線。'
+      '擴充 Firestore 逐字稿與場次資料表：新增 input_mode、發話秒數 (speech_duration)、停頓時間 (pause_before_response) 與語速 (speech_rate)欄位，預留 Unity XR 與 Whisper/Azure 對接管線。'
     ]
   },
   {
