@@ -1,14 +1,15 @@
 import { X, Calendar } from 'lucide-react';
-import { CHANGELOG_DATA } from '../constants/changelog';
-
+import { CHANGELOG_DATA, type ChangelogItem } from '../constants/changelog';
 
 interface ChangelogModalProps {
   isOpen: boolean;
   onClose: () => void;
+  changelogs?: ChangelogItem[];
 }
 
-export default function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
+export default function ChangelogModal({ isOpen, onClose, changelogs }: ChangelogModalProps) {
   if (!isOpen) return null;
+  const items: ChangelogItem[] = changelogs && changelogs.length > 0 ? changelogs : CHANGELOG_DATA;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-fadeIn">
@@ -41,10 +42,10 @@ export default function ChangelogModal({ isOpen, onClose }: ChangelogModalProps)
 
         {/* 時間軸內容 */}
         <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
-          {CHANGELOG_DATA.map((item, index) => (
+          {items.map((item, index) => (
             <div key={item.version} className="relative pl-6 pb-2 last:pb-0 font-sans">
               {/* 時間軸垂直引導線 */}
-              {index !== CHANGELOG_DATA.length - 1 && (
+              {index !== items.length - 1 && (
                 <span className="absolute left-[9px] top-4 bottom-0 w-[2px] bg-slate-800" aria-hidden="true" />
               )}
               {/* 時間軸圓點 */}

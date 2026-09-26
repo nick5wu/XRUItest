@@ -21,8 +21,9 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
-  overflow: hidden; /* 滿版介面 */
+  background: linear-gradient(135deg, #0a0f1d 0%, #0f172a 50%, #1e1b4b 100%);
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* Custom Scrollbar for Chat Window */

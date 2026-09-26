@@ -7,6 +7,18 @@ export interface ChangelogItem {
 
 export const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    version: 'v2.0.0',
+    date: '2026-09-26',
+    title: 'XR 家庭訪談 AI 系統架構大升級：正式推出 Express + Gemini 後端伺服器 (支援 Unity VR) 與前端模組化架構',
+    changes: [
+      '建置獨立 Express.js + TypeScript 後端伺服器 (Port 3001)，支援 Unity VR (Meta Quest) 實機與 Web 雙軌連線。',
+      '全面升級 Google Gemini 2.5 Flash 核心，整合動態防衛機制 (NPC 防衛短句生成)、痛點觸發監測與 Focus Tracker 提問焦點分析。',
+      '三大 Unity 對接核心端點就緒：/api/session/start (場次初始化)、/api/chat (對話主引擎)、/api/session/end (六大面向加權結算)。',
+      '前端架構深度模組化：拆分 InteractiveTrainer、LiveMonitorView、SessionReportView、SupervisorReviewPanel 與 AnalyticsExportView 等模組視圖。',
+      '完備 8 大家庭個案庫 (Persona 1~8)，涵蓋隔代教養、新住民、高風險等完整家庭情境與深層防衛痛點。'
+    ]
+  },
+  {
     version: 'v1.5.0',
     date: '2026-08-17',
     title: '實作訪談時間軸紀錄 (Timeline Logs) 與 30/60/90 分鐘動態權重系統',
