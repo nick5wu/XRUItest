@@ -111,14 +111,30 @@ export const ApiChatResponse = {};
 export const ApiEvaluationReport = {};
 export const ApiSessionFullDetail = {};
 
-const BACKEND_BASE = 'http://localhost:3001';
+const BACKEND_BASE = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
 
 async function fetchWithFallback(endpoint: string, options?: RequestInit) {
-  // 優先嘗試經由 Vite Proxy 或直接呼叫 Express 後端
-  const urls = [
-    endpoint,
-    endpoint.startsWith('/api') ? `${BACKEND_BASE}${endpoint}` : `${BACKEND_BASE}/api${endpoint}`
-  ];
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const urls: string[] = [];
+
+  // 若設定了雲端後端網址 (例如 Cloud Run)，優先呼叫該網址
+  if (import.meta.env.VITE_BACKEND_URL) {
+    const fullCloudUrl = cleanEndpoint.startsWith('/api') 
+      ? `${BACKEND_BASE}${cleanEndpoint}` 
+      : `${BACKEND_BASE}/api${cleanEndpoint}`;
+    urls.push(fullCloudUrl);
+  }
+
+  // 經由 Vite Proxy 或同源直接存取
+  urls.push(cleanEndpoint);
+
+  // 本機後端備援
+  const fullLocalUrl = cleanEndpoint.startsWith('/api') 
+    ? `${BACKEND_BASE}${cleanEndpoint}` 
+    : `${BACKEND_BASE}/api${cleanEndpoint}`;
+  if (!urls.includes(fullLocalUrl)) {
+    urls.push(fullLocalUrl);
+  }
 
   let lastError: any = null;
   for (const url of urls) {
@@ -138,10 +154,20 @@ export const apiClient = {
   // 健康檢查
   async checkHealth(): Promise<{ online: boolean; message?: string }> {
     try {
-      const res = await fetch('/health').catch(() => fetch(`${BACKEND_BASE}/health`));
-      if (res && res.ok) {
-        const data = await res.json();
-        return { online: true, message: data.gemini_model || 'OK' };
+      const healthEndpoints = [
+        import.meta.env.VITE_BACKEND_URL ? `${BACKEND_BASE}/health` : null,
+        '/health',
+        `${BACKEND_BASE}/health`
+      ].filter(Boolean) as string[];
+
+      for (const url of healthEndpoints) {
+        try {
+          const res = await fetch(url);
+          if (res && res.ok) {
+            const data = await res.json();
+            return { online: true, message: data.gemini_model || 'OK' };
+          }
+        } catch {}
       }
       return { online: false };
     } catch {

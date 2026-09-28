@@ -28,7 +28,18 @@ for (const p of candidatePaths) {
 
 try {
   if (admin.apps.length === 0) {
-    if (loadedPath) {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+      try {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount)
+        });
+        isFirebaseAdminInitialized = true;
+        console.log('[Firebase Admin] 成功透過環境變數 FIREBASE_SERVICE_ACCOUNT_JSON 初始化！');
+      } catch (err) {
+        console.warn('[Firebase Admin] 解析 FIREBASE_SERVICE_ACCOUNT_JSON 失敗:', err);
+      }
+    } else if (loadedPath) {
       const serviceAccount = JSON.parse(fs.readFileSync(loadedPath, 'utf8'));
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
