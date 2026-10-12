@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Activity, 
   RefreshCw, 
@@ -34,8 +34,6 @@ export const LiveMonitorView: React.FC<LiveMonitorViewProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isAutoRefresh, setIsAutoRefresh] = useState<boolean>(true);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
-  
-  const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (initialSessionId) {
@@ -92,12 +90,6 @@ export const LiveMonitorView: React.FC<LiveMonitorViewProps> = ({
     return () => clearInterval(interval);
   }, [isAutoRefresh, selectedSessionId]);
 
-  // 自動滾動逐字稿至底部
-  useEffect(() => {
-    if (transcriptEndRef.current) {
-      transcriptEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [sessionDetail?.utterances]);
 
   // 轉換 NPC 狀態軌跡點給圖表
   const chartData: StatePoint[] = (sessionDetail?.npcLogs || []).map((log, idx) => ({
@@ -361,7 +353,6 @@ export const LiveMonitorView: React.FC<LiveMonitorViewProps> = ({
                 );
               })
             )}
-            <div ref={transcriptEndRef} />
           </div>
         </div>
 
