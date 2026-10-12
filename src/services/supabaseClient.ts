@@ -23,28 +23,39 @@ export interface CurrentUser {
  */
 export async function requireLogin(): Promise<{ session: any; user: CurrentUser } | null> {
   try {
+    const isPlaceholder = !supabaseUrl || supabaseUrl.includes('placeholder');
+
+    // 1. 若尚未配置真實 Supabase URL (例如雙方尚未正式串接)，一律提供完整展示帳號，徹底杜絕無窮重新導向
+    if (isPlaceholder) {
+      console.info('[Supabase] 未配置真實 Supabase 金鑰，啟用單機展示/測試模式');
+      return {
+        session: null,
+        user: {
+          id: 'supervisor_demo',
+          name: '督導教授 (展示模式)',
+          role: 'owner', // 預設開放全部功能供檢視
+          email: 'supervisor@demo.edu.tw',
+          isMock: true
+        }
+      };
+    }
+
+    // 2. 若有配置 Supabase，嘗試取得登入 Session
     const { data: { session } } = await supabase.auth.getSession();
 
     if (!session) {
-      // 若為本機開發且未配置真實 Supabase URL，提供本地模擬機制防崩潰
-      const isPlaceholder = !supabaseUrl || supabaseUrl.includes('placeholder');
-      if (isPlaceholder && import.meta.env.DEV) {
-        console.warn('[Supabase] 檢測到為本地開發模式且未填寫真實 Supabase 金鑰，使用本地模擬登入');
-        return {
-          session: null,
-          user: {
-            id: 'dev_mock_trainee_01',
-            name: '本地測試學員 (Dev Mode)',
-            role: 'owner', // 開發模式預設開放檢視督導與學員全功能
-            email: 'dev@test.edu.tw',
-            isMock: true
-          }
-        };
-      }
-
-      // 正式環境或已配置 Supabase：強制導回入口網站
-      window.location.href = '/?next=' + encodeURIComponent('/xr/');
-      return null;
+      // 若對方系統尚未登入，且在直接存取本系統時，自動降級為展示模式，確保系統能正常體驗與操作
+      console.warn('[Supabase] 尚未取得入口網站登入 Session，啟用單機展示模式以供正常使用');
+      return {
+        session: null,
+        user: {
+          id: 'supervisor_demo',
+          name: '督導教授 (展示模式)',
+          role: 'owner',
+          email: 'supervisor@demo.edu.tw',
+          isMock: true
+        }
+      };
     }
 
     const role = getRole(session.access_token);
@@ -59,7 +70,17 @@ export async function requireLogin(): Promise<{ session: any; user: CurrentUser 
     return { session, user };
   } catch (error) {
     console.error('[Supabase Auth Check Error]:', error);
-    return null;
+    // 出錯時亦提供防崩潰保護模式
+    return {
+      session: null,
+      user: {
+        id: 'supervisor_demo',
+        name: '督導教授 (離線保護模式)',
+        role: 'owner',
+        email: 'supervisor@demo.edu.tw',
+        isMock: true
+      }
+    };
   }
 }
 

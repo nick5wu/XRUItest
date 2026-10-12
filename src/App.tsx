@@ -107,7 +107,23 @@ export default function App() {
     } catch (e) {
       console.warn('Sign out warning:', e);
     }
+    if (currentUser?.isMock) {
+      alert('目前為系統獨立模式，已重置狀態。');
+      window.location.reload();
+      return;
+    }
     window.location.href = '/?next=' + encodeURIComponent('/xr/');
+  };
+
+  const handleToggleMockRole = () => {
+    if (!currentUser?.isMock) return;
+    const nextRole = currentUser.role === 'owner' ? 'student' : 'owner';
+    setCurrentUser(prev => prev ? ({
+      ...prev,
+      role: nextRole,
+      name: nextRole === 'owner' ? '督導教授 (獨立模式)' : '受訓學員 (獨立模式)'
+    }) : null);
+    setActiveTab(nextRole === 'owner' ? 'sessions' : 'trainer');
   };
 
   const isStaff = currentUser?.role === 'owner' || currentUser?.role === 'assistant';
@@ -380,13 +396,27 @@ export default function App() {
                     {currentUser.name}
                   </div>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                      isStaff 
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
-                        : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
-                    }`}>
-                      {isStaff ? '督導/教授' : '受訓學員'}
-                    </span>
+                    {currentUser.isMock ? (
+                      <button
+                        onClick={handleToggleMockRole}
+                        title="獨立展示模式：點擊可切換 督導 / 學員 視角"
+                        className={`px-1.5 py-0.2 rounded text-[10px] font-bold cursor-pointer transition hover:opacity-80 ${
+                          isStaff 
+                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
+                            : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                        }`}
+                      >
+                        {isStaff ? '督導/教授 ▾' : '受訓學員 ▾'}
+                      </button>
+                    ) : (
+                      <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                        isStaff 
+                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
+                          : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                      }`}>
+                        {isStaff ? '督導/教授' : '受訓學員'}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
@@ -458,6 +488,12 @@ export default function App() {
             {/* 返回整合平台 */}
             <a
               href="/portal"
+              onClick={(e) => {
+                if (currentUser?.isMock) {
+                  e.preventDefault();
+                  alert('目前為系統獨立展示模式，尚未連線至外部整合平台。');
+                }
+              }}
               className="px-3 py-1.5 text-slate-300 hover:text-white bg-slate-900/90 hover:bg-slate-800 rounded-xl text-xs flex items-center gap-1.5 border border-slate-800 transition shadow-sm"
               title="返回 IEP 整合平台首頁"
             >
