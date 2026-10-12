@@ -309,24 +309,60 @@ export const AnalyticsExportView: React.FC = () => {
                 </tr>
               ) : (
                 lsaPreview.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-slate-800/30">
-                    <td className="py-2 px-2 font-mono text-slate-400">{row.timestamp_seconds}s</td>
-                    <td className="py-2 px-2 font-mono">{row.step_index}</td>
-                    <td className="py-2 px-2">
-                      <span className={row.speaker === 'user' ? 'text-sky-300 font-bold' : 'text-amber-300 font-bold'}>
-                        {row.speaker}
+                  <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
+                    <td className="py-2.5 px-2 font-mono text-slate-400">{row.timestamp_seconds}s</td>
+                    <td className="py-2.5 px-2 font-mono text-slate-500">#{row.step_index}</td>
+                    <td className="py-2.5 px-2">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        row.speaker === 'user' 
+                          ? 'bg-sky-500/15 text-sky-300 border border-sky-500/30' 
+                          : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                      }`}>
+                        {row.speaker === 'user' ? '學員' : '家長'}
                       </span>
                     </td>
-                    <td className="py-2 px-4 max-w-xs truncate" title={row.text}>
+                    <td className="py-2.5 px-4 max-w-sm truncate text-slate-200" title={row.text}>
                       {row.text}
                     </td>
-                    <td className="py-2 px-2 font-mono text-slate-300">{row.question_type}</td>
-                    <td className="py-2 px-2 font-mono text-emerald-400">{row.empathy_level}</td>
-                    <td className="py-2 px-2 font-mono text-rose-400">{row.risk_tag}</td>
-                    <td className="py-2 px-2 font-mono">{row.trust_score}</td>
-                    <td className="py-2 px-2 font-mono">{row.defense_score}</td>
-                    <td className="py-2 px-2 font-mono font-bold text-indigo-300">
-                      {row.behavior_code}
+                    <td className="py-2.5 px-2">
+                      {row.question_type && row.question_type !== 'none' ? (
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                          row.question_type === 'open' 
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' 
+                            : row.question_type === 'routine_based'
+                            ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700'
+                        }`}>
+                          {row.question_type === 'open' ? '開放式' : row.question_type === 'routine_based' ? '作息本位' : '封閉式'}
+                        </span>
+                      ) : (
+                        <span className="text-slate-600">-</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-2">
+                      {row.empathy_level > 0 ? (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          Lv.{row.empathy_level}
+                        </span>
+                      ) : (
+                        <span className="text-slate-600">0</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-2">
+                      {row.risk_tag ? (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                          ⚠️ {row.risk_tag}
+                        </span>
+                      ) : (
+                        <span className="text-slate-600 font-mono">-</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-2 font-mono text-emerald-400">{row.trust_score}</td>
+                    <td className="py-2.5 px-2 font-mono text-rose-400">{row.defense_score}</td>
+                    <td className="py-2.5 px-2">
+                      <span className="px-2 py-0.5 rounded-full font-mono font-bold text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        {row.behavior_code}
+                      </span>
                     </td>
                   </tr>
                 ))

@@ -16,6 +16,7 @@ import {
   Download
 } from 'lucide-react';
 import { apiClient, ApiSessionFullDetail, ApiSession } from '../services/apiClient';
+import { caseProfiles } from '../constants/cases';
 import { RadarChart, RadarDimension } from './RadarChart';
 
 interface SessionReportViewProps {
@@ -174,13 +175,17 @@ export const SessionReportView: React.FC<SessionReportViewProps> = ({
           <select
             value={selectedSessionId}
             onChange={(e) => setSelectedSessionId(e.target.value)}
-            className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 outline-none focus:border-purple-500"
+            className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 outline-none focus:border-purple-500 max-w-xs"
           >
-            {sessions.map((s) => (
-              <option key={s.session_id} value={s.session_id}>
-                {s.session_id.substring(0, 16)}... ({s.case_id}) - {s.status === 'completed' ? '已結算' : '進行中'}
-              </option>
-            ))}
+            {sessions.map((s) => {
+              const caseName = caseProfiles.find(c => c.case_id === s.case_id || c.id === s.case_id)?.persona_name || s.case_id;
+              const score = s.supervisor_total_score ?? s.final_score;
+              return (
+                <option key={s.session_id} value={s.session_id}>
+                  [{s.status === 'completed' ? '已結算' : '進行中'}] 學員: {s.user_id} · {caseName} {score !== undefined ? `(${score}分)` : ''}
+                </option>
+              );
+            })}
           </select>
 
           {/* 匯出本場次 LSA CSV */}

@@ -18,22 +18,30 @@ import { apiClient, ApiSessionFullDetail, ApiSession } from '../services/apiClie
 import { DynamicStateChart, StatePoint } from './DynamicStateChart';
 
 interface LiveMonitorViewProps {
+  initialSessionId?: string;
   onSelectSessionForReport?: (sessionId: string) => void;
   onSelectSessionForReview?: (sessionId: string) => void;
 }
 
 export const LiveMonitorView: React.FC<LiveMonitorViewProps> = ({
+  initialSessionId,
   onSelectSessionForReport,
   onSelectSessionForReview,
 }) => {
   const [sessions, setSessions] = useState<ApiSession[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string>('');
+  const [selectedSessionId, setSelectedSessionId] = useState<string>(initialSessionId || '');
   const [sessionDetail, setSessionDetail] = useState<ApiSessionFullDetail | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isAutoRefresh, setIsAutoRefresh] = useState<boolean>(true);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
   
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (initialSessionId) {
+      setSelectedSessionId(initialSessionId);
+    }
+  }, [initialSessionId]);
 
   // 載入全場次清單
   const loadSessions = async () => {

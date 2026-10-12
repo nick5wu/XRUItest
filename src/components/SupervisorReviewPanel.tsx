@@ -12,6 +12,7 @@ import {
   BookOpen
 } from 'lucide-react';
 import { apiClient, ApiSession, ApiSessionFullDetail } from '../services/apiClient';
+import { caseProfiles } from '../constants/cases';
 
 interface SupervisorReviewPanelProps {
   initialSessionId?: string;
@@ -176,13 +177,16 @@ export const SupervisorReviewPanel: React.FC<SupervisorReviewPanelProps> = ({
           <select
             value={selectedSessionId}
             onChange={(e) => setSelectedSessionId(e.target.value)}
-            className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 outline-none focus:border-emerald-500"
+            className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 outline-none focus:border-emerald-500 max-w-xs"
           >
-            {sessions.map((s) => (
-              <option key={s.session_id} value={s.session_id}>
-                {s.supervisor_reviewed ? '✅ 已覆核' : '⏳ 待覆核'} - {s.session_id.substring(0, 16)}... ({s.case_id})
-              </option>
-            ))}
+            {sessions.map((s) => {
+              const caseName = caseProfiles.find(c => c.case_id === s.case_id || c.id === s.case_id)?.persona_name || s.case_id;
+              return (
+                <option key={s.session_id} value={s.session_id}>
+                  {s.supervisor_reviewed ? `✅ 已覆核 (${s.supervisor_total_score}分)` : '⏳ 待覆核'} - 學員: {s.user_id} · {caseName}
+                </option>
+              );
+            })}
           </select>
         </div>
       </div>
