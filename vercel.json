@@ -1,11 +1,15 @@
 {
   "rewrites": [
     {
+      "source": "/xr/assets/:path*",
+      "destination": "/assets/:path*"
+    },
+    {
       "source": "/xr/:path*",
       "destination": "/:path*"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/).*)",
       "destination": "/index.html"
     }
   ]
