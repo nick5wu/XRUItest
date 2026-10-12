@@ -19,6 +19,8 @@ import { apiClient, ApiChatResponse, ApiEvaluationReport } from '../services/api
 import { caseProfiles, type CaseProfile } from '../constants/cases';
 import { useWebSpeech } from '../hooks/useWebSpeech';
 
+import type { CurrentUser } from '../services/supabaseClient';
+
 interface Message {
   id: string;
   sender: 'user' | 'npc';
@@ -33,14 +35,16 @@ interface Message {
 
 interface InteractiveTrainerProps {
   onSessionEnded?: (sessionId: string) => void;
+  currentUser?: CurrentUser | null;
 }
 
 export const InteractiveTrainer: React.FC<InteractiveTrainerProps> = ({
-  onSessionEnded
+  onSessionEnded,
+  currentUser
 }) => {
   const [selectedCaseId, setSelectedCaseId] = useState<string>('persona_1');
   const [selectedDuration, setSelectedDuration] = useState<'30' | '60' | '90'>('30');
-  const [userId, setUserId] = useState<string>('trainee_web_01');
+  const [userId, setUserId] = useState<string>(currentUser?.id || 'trainee_web_01');
   const [sessionId, setSessionId] = useState<string>('');
   
   const [isSessionActive, setIsSessionActive] = useState<boolean>(false);
@@ -84,6 +88,13 @@ export const InteractiveTrainer: React.FC<InteractiveTrainerProps> = ({
       setInputText(recognitionText);
     }
   }, [recognitionText]);
+
+  // 同步當前登入者 ID
+  useEffect(() => {
+    if (currentUser?.id) {
+      setUserId(currentUser.id);
+    }
+  }, [currentUser]);
 
   // 自動滾動對話框
   useEffect(() => {
@@ -259,17 +270,26 @@ export const InteractiveTrainer: React.FC<InteractiveTrainerProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* 學員 ID */}
+            {/* 登入者身分 (由 Supabase 統一認證，避免竄改) */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                受訓學員編號 / 姓名
+              <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                <span>受訓學員身分 (Supabase 認證)</span>
+                <span className="text-[10px] text-emerald-400 font-mono">● 已綁定登入者</span>
               </label>
-              <input
-                type="text"
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 text-slate-200 text-xs rounded-xl p-2.5 outline-none font-mono"
-              />
+              <div className="w-full bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl p-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></div>
+                  <span className="font-semibold text-white truncate">
+                    {currentUser?.name || '已認證學員'}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-mono truncate hidden sm:inline">
+                    ({currentUser?.id || userId})
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-sky-500/10 text-sky-300 border border-sky-500/30 shrink-0 font-bold">
+                  {currentUser?.role === 'owner' || currentUser?.role === 'assistant' ? '督導身分' : '學員身分'}
+                </span>
+              </div>
             </div>
 
             {/* 時長設定 */}

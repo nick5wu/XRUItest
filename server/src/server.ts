@@ -4,14 +4,34 @@ import dotenv from 'dotenv';
 import { getCaseById, caseProfiles } from './constants/cases';
 import { firestoreService, UtteranceRecord, SkillAnnotationRecord } from './services/firestoreService';
 import { geminiAIService } from './services/geminiService';
+import { requireAuth, requireStaff } from './middleware/auth';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// 中介軟體配置
-app.use(cors({ origin: '*' })); // 支援 Unity VR、WebXR 裝置與前端儀表板 Cross-Origin
+// CORS 白名單配置：僅允許入口網站與本地開發環境
+const portalOrigin = process.env.PORTAL_ORIGIN;
+const allowedOrigins = [
+  portalOrigin,
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:3001'
+].filter(Boolean) as string[];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // 允許無 origin 之伺服器/反向代理/非瀏覽器連線 (如 Unity VR 設備)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.length === 0 || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      return callback(null, true);
+    }
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
+  },
+  credentials: true
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -26,6 +46,11 @@ app.get('/health', (req: Request, res: Response) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// =========================================================================
+// 身分驗證中介軟體 (保護所有 /api 路由，/health 維持開放)
+// =========================================================================
+app.use('/api', requireAuth);
 
 // =========================================================================
 // 個案列表讀取 (GET /api/cases)
@@ -53,7 +78,8 @@ app.post('/api/session/start', async (req: Request, res: Response): Promise<void
       : '30') as '30' | '60' | '90';
 
     const targetCase = getCaseById(rawCaseId);
-    const userId = rawUserId || 'trainee_vr_default';
+    // 優先使用 Supabase 驗證後的 user.id，不再信任前端自由帶入的身分
+    const userId = req.user?.id || rawUserId || 'trainee_vr_default';
 
     // 1. 在 Firestore 建立 training_sessions
     const sessionId = await firestoreService.createSession(userId, targetCase.case_id, validDuration);
@@ -302,17 +328,18 @@ app.post('/api/session/end', async (req: Request, res: Response): Promise<void> 
 });
 
 // =========================================================================
-// 4. 【POST /api/supervisor/review】督導人工覆評
+// 4. 【POST /api/supervisor/review】督導人工覆評 (僅限督導與教師)
 // =========================================================================
-app.post('/api/supervisor/review', async (req: Request, res: Response): Promise<void> => {
+app.post('/api/supervisor/review', requireStaff, async (req: Request, res: Response): Promise<void> => {
   try {
     const {
       session_id,
-      supervisor_id = 'supervisor_default',
       supervisor_scores,
       supervisor_comments = '',
       require_repetition = false
     } = req.body;
+
+    const supervisor_id = req.user?.id || req.body.supervisor_id || 'supervisor_default';
 
     if (!session_id || !supervisor_scores) {
       res.status(400).json({ success: false, error: '缺少 session_id 或 supervisor_scores' });
@@ -359,9 +386,9 @@ app.post('/api/supervisor/review', async (req: Request, res: Response): Promise<
 });
 
 // =========================================================================
-// 5. 【GET /api/export/lsa】研究資料匯出 (Lag Sequential Analysis 格式 CSV)
+// 5. 【GET /api/export/lsa】研究資料匯出 (僅限督導與教師，Lag Sequential Analysis CSV)
 // =========================================================================
-app.get('/api/export/lsa', async (req: Request, res: Response): Promise<void> => {
+app.get('/api/export/lsa', requireStaff, async (req: Request, res: Response): Promise<void> => {
   try {
     const targetSessionId = req.query.session_id as string | undefined;
     const format = req.query.format as string | undefined;
@@ -516,7 +543,12 @@ app.get('/api/export/lsa', async (req: Request, res: Response): Promise<void> =>
 // =========================================================================
 app.get('/api/sessions', async (req: Request, res: Response) => {
   try {
-    const sessions = await firestoreService.getAllSessions();
+    let sessions = await firestoreService.getAllSessions();
+    const isStaff = ['owner', 'assistant', 'supervisor', 'teacher'].includes(req.user?.role || '');
+    if (!isStaff && req.user?.id) {
+      // 學生身分只可檢視自己執行的場次紀錄
+      sessions = sessions.filter(s => s.user_id === req.user?.id);
+    }
     res.json({ success: true, sessions });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -528,6 +560,11 @@ app.get('/api/session/:sessionId/detail', async (req: Request, res: Response) =>
     const details = await firestoreService.getSessionFullDetails(req.params.sessionId);
     if (!details.session) {
       res.status(404).json({ success: false, error: '場次不存在' });
+      return;
+    }
+    const isStaff = ['owner', 'assistant', 'supervisor', 'teacher'].includes(req.user?.role || '');
+    if (!isStaff && req.user?.id && details.session.user_id !== req.user.id) {
+      res.status(403).json({ success: false, error: '權限不足：無法檢視其他學員的場次詳細資訊' });
       return;
     }
     res.json({ success: true, details });

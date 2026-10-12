@@ -1,4 +1,5 @@
 import { caseProfiles, type CaseProfile } from '../constants/cases';
+import { supabase } from './supabaseClient';
 
 export interface ApiSession {
   session_id: string;
@@ -111,35 +112,59 @@ export const ApiChatResponse = {};
 export const ApiEvaluationReport = {};
 export const ApiSessionFullDetail = {};
 
-const BACKEND_BASE = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
+const BACKEND_BASE = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/$/, '');
 
 async function fetchWithFallback(endpoint: string, options?: RequestInit) {
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const urls: string[] = [];
 
-  // 若設定了雲端後端網址 (例如 Cloud Run)，優先呼叫該網址
-  if (import.meta.env.VITE_BACKEND_URL) {
-    const fullCloudUrl = cleanEndpoint.startsWith('/api') 
-      ? `${BACKEND_BASE}${cleanEndpoint}` 
-      : `${BACKEND_BASE}/api${cleanEndpoint}`;
-    urls.push(fullCloudUrl);
+  // 取得 Supabase 登入 session 並附加 Authorization Bearer 標頭
+  let token = '';
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    token = session?.access_token || '';
+  } catch (e) {
+    console.warn('[apiClient] 讀取 Supabase session 失敗', e);
   }
 
-  // 經由 Vite Proxy 或同源直接存取
-  urls.push(cleanEndpoint);
+  const mergedHeaders: Record<string, string> = {
+    ...(options?.headers as Record<string, string> || {}),
+  };
+  if (token) {
+    mergedHeaders['Authorization'] = `Bearer ${token}`;
+  }
 
-  // 本機後端備援
-  const fullLocalUrl = cleanEndpoint.startsWith('/api') 
-    ? `${BACKEND_BASE}${cleanEndpoint}` 
-    : `${BACKEND_BASE}/api${cleanEndpoint}`;
-  if (!urls.includes(fullLocalUrl)) {
-    urls.push(fullLocalUrl);
+  const mergedOptions: RequestInit = {
+    ...options,
+    headers: mergedHeaders,
+  };
+
+  const urls: string[] = [];
+
+  // 若設定了後端網址 (例如 /xr-api 或 Cloud Run)，優先呼叫該網址
+  if (import.meta.env.VITE_BACKEND_URL) {
+    const targetUrl = cleanEndpoint.startsWith('/api') 
+      ? `${BACKEND_BASE}${cleanEndpoint}` 
+      : `${BACKEND_BASE}/api${cleanEndpoint}`;
+    urls.push(targetUrl);
+  } else {
+    // 經由 Vite Proxy 或同源直接存取
+    urls.push(cleanEndpoint);
+  }
+
+  // 本機後端備援：僅在開發環境 (DEV) 下啟用，正式環境拿掉 localhost 備援
+  if (import.meta.env.DEV) {
+    const fullLocalUrl = cleanEndpoint.startsWith('/api') 
+      ? `http://localhost:3001${cleanEndpoint}` 
+      : `http://localhost:3001/api${cleanEndpoint}`;
+    if (!urls.includes(fullLocalUrl)) {
+      urls.push(fullLocalUrl);
+    }
   }
 
   let lastError: any = null;
   for (const url of urls) {
     try {
-      const res = await fetch(url, options);
+      const res = await fetch(url, mergedOptions);
       if (res.ok) {
         return await res.json();
       }
@@ -157,7 +182,7 @@ export const apiClient = {
       const healthEndpoints = [
         import.meta.env.VITE_BACKEND_URL ? `${BACKEND_BASE}/health` : null,
         '/health',
-        `${BACKEND_BASE}/health`
+        import.meta.env.DEV ? 'http://localhost:3001/health' : null
       ].filter(Boolean) as string[];
 
       for (const url of healthEndpoints) {
